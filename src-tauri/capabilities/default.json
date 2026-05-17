@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for BDO Beauty Album",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open"
+  ]
+}

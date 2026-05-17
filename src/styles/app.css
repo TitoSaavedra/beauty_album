@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gold: #ffcc4d;
+  --gold-dim: rgba(255, 204, 77, 0.5);
+  --gold-bg: rgba(255, 204, 77, 0.08);
+  --surface: #0f141a;
+  --surface-2: #0a0d12;
+  --surface-3: #070a0e;
+  --border: #1a232c;
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --text-dim: #64748b;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: linear-gradient(135deg, #06080a 0%, #0b0f14 100%);
+  color: #f1f5f9;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.glass-panel {
+  background: rgba(15, 22, 28, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.bdo-gold-gradient {
+  background: linear-gradient(135deg, #ffcc4d 0%, #b3861b 100%);
+}
+
+.btn-gold {
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #ffcc4d 0%, #b3861b 100%);
+  border: none;
+  color: #000;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: filter 0.2s;
+}
+
+.btn-gold:hover { filter: brightness(1.1); }
+
+.custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.custom-scroll::-webkit-scrollbar-track { background: #06080a; }
+.custom-scroll::-webkit-scrollbar-thumb { background: #222d3a; border-radius: 4px; }
+.custom-scroll::-webkit-scrollbar-thumb:hover { background: #ffcc4d; }
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #06080a; }
+::-webkit-scrollbar-thumb { background: #222d3a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #ffcc4d; }

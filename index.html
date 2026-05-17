@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium BDO Beauty Album</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #06080a 0%, #0b0f14 100%);
+            color: #f1f5f9;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .glass-panel {
+            background: rgba(15, 22, 28, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .class-btn {
+            border-left: 3px solid transparent;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .class-btn.active {
+            border-left-color: #ffcc4d;
+            background: linear-gradient(90deg, rgba(255, 204, 77, 0.08) 0%, transparent 100%);
+            color: #ffcc4d;
+        }
+        .preset-card {
+            background: #0f141a;
+            border: 1px solid #1a232c;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .preset-card:hover {
+            border-color: #ffcc4d;
+            box-shadow: 0 0 20px rgba(255, 204, 77, 0.1);
+            transform: translateY(-4px);
+        }
+        .bdo-gold-gradient {
+            background: linear-gradient(135deg, #ffcc4d 0%, #b3861b 100%);
+        }
+        /* Custom scrollbars independientes */
+        .custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #06080a; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #222d3a; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #ffcc4d; }
+    </style>
+</head>
+<body class="min-h-screen h-screen flex flex-col overflow-hidden">
+
+    <nav class="h-16 max-h-16 border-b border-[#1a232c] glass-panel px-8 flex items-center justify-between z-20 flex-none">
+        <div class="flex items-center gap-3">
+            <div class="h-3 w-3 rounded-full bdo-gold-gradient animate-pulse"></div>
+            <span class="text-sm font-bold tracking-[0.2em] text-white uppercase">Archive // Beauty Album</span>
+        </div>
+        <div id="global-stats" class="text-xs font-mono tracking-widest text-slate-400 bg-[#070a0e] px-4 py-1.5 rounded border border-[#1a232c]"></div>
+    </nav>
+
+    <div class="flex flex-1 h-[calc(100vh-4rem)] overflow-hidden relative">
+        
+        <aside class="w-72 border-r border-[#1a232c] bg-[#070a0e]/90 flex flex-col z-10 h-full flex-none">
+            <div class="p-4 border-b border-[#1a232c]/50 flex-none">
+                <input type="text" id="class-search" placeholder="BUSCAR CLASE..." 
+                    class="w-full bg-[#0f141a] border border-[#1a232c] rounded px-3 py-2 text-xs font-mono tracking-wider text-white focus:outline-none focus:border-[#ffcc4d] placeholder-slate-600 transition-colors" />
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-1.5 custom-scroll" id="classes-list">
+            </div>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto p-8 relative h-full custom-scroll" style="background-image: radial-gradient(rgba(255,255,255,0.01) 1px, transparent 0); background-size: 24px 24px;">
+            <div id="presets-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+            </div>
+        </main>
+    </div>
+
+    <div id="detail-modal" class="fixed inset-0 bg-black/85 z-50 hidden opacity-0 transition-opacity duration-300 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div id="modal-container" class="bg-[#0a0d12] border border-[#222d3a] rounded-lg max-w-5xl w-full max-h-[85vh] overflow-hidden flex flex-col lg:flex-row shadow-2xl">
+            <div class="lg:w-3/5 bg-[#05070a] p-6 flex flex-col justify-between border-r border-[#1a232c]">
+                <div class="relative flex-1 flex items-center justify-center min-h-[40vh] max-h-[60vh] overflow-hidden rounded bg-[#090c10]">
+                    <img id="modal-main-preview" src="" class="max-w-full max-h-full object-contain rounded" />
+                </div>
+                <div id="modal-thumbnails" class="flex gap-2 mt-4 overflow-x-auto py-2 custom-scroll"></div>
+            </div>
+
+            <div class="lg:w-2/5 p-8 flex flex-col justify-between bg-[#0d1218] overflow-y-auto custom-scroll">
+                <div class="flex flex-col gap-6">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span id="modal-class-name" class="text-xs font-bold tracking-widest text-[#ffcc4d] uppercase bg-[#ffcc4d]/10 px-2.5 py-1 rounded border border-[#ffcc4d]/20"></span>
+                            <h2 id="modal-title" class="text-xl font-bold text-white mt-3 tracking-wide"></h2>
+                        </div>
+                        <button onclick="closeModal()" class="text-slate-400 hover:text-white text-2xl font-light transition-colors">&times;</button>
+                    </div>
+
+                    <div class="border-t border-[#1a232c] pt-4 flex flex-col gap-2 text-sm">
+                        <div class="flex justify-between"><span class="text-slate-400">Creador</span><span id="modal-creator" class="text-slate-200 font-medium"></span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">ID Registro</span><span id="modal-id" class="text-slate-200 font-mono"></span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Fecha de Carga</span><span id="modal-date" class="text-slate-200"></span></div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3 bg-[#070a0e] p-4 rounded-lg border border-[#1a232c] text-center">
+                        <div><div class="text-xs text-slate-400 mb-1">Descargas</div><div id="modal-stat-dl" class="text-sm font-bold text-white font-mono"></div></div>
+                        <div><div class="text-xs text-slate-400 mb-1">Vistas</div><div id="modal-stat-views" class="text-sm font-bold text-white font-mono"></div></div>
+                        <div><div class="text-xs text-slate-400 mb-1">Favoritos</div><div id="modal-stat-fav" class="text-sm font-bold text-[#ffcc4d] font-mono"></div></div>
+                    </div>
+                </div>
+
+                <div id="modal-download-container" class="mt-8 border-t border-[#1a232c] pt-6"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentClass = "";
+
+        async function init() {
+            try {
+                const res = await fetch('/api/classes');
+                const classes = await res.json();
+                const listContainer = document.getElementById('classes-list');
+                
+                listContainer.innerHTML = classes.map(c => `
+                    <button onclick="loadPresets('${c.name}')" id="btn-${c.name.replace(/ /g, '-')}" class="class-btn flex items-center justify-between w-full px-4 py-3 text-left text-xs tracking-wider uppercase font-semibold rounded group text-slate-400 hover:text-white hover:bg-[#0f141a]">
+                        <span class="truncate">${c.name}</span>
+                        ${c.icon_url ? `<img src="${c.icon_url}" class="h-5 w-5 object-contain bg-[#0a0d12] p-0.5 rounded border border-[#1a232c] group-hover:border-[#ffcc4d]/40" />` : ''}
+                    </button>
+                `).join('');
+
+                // Configurar Filtro de Clases en Tiempo Real
+                document.getElementById('class-search').addEventListener('input', (e) => {
+                    const query = e.target.value.toLowerCase();
+                    document.querySelectorAll('.class-btn').forEach(btn => {
+                        const className = btn.querySelector('span').innerText.toLowerCase();
+                        if (className.includes(query)) {
+                            btn.classList.remove('hidden');
+                        } else {
+                            btn.classList.add('hidden');
+                        }
+                    });
+                });
+
+                // Configurar Cierre de Modal Clickeando Fuera
+                document.getElementById('detail-modal').addEventListener('click', (e) => {
+                    if (e.target === document.getElementById('detail-modal')) {
+                        closeModal();
+                    }
+                });
+
+                if(classes.length > 0) loadPresets(classes[0].name);
+            } catch(e) { console.error("Initialization Failed:", e); }
+        }
+
+        async function loadPresets(className) {
+            if(currentClass) {
+                document.getElementById(`btn-${currentClass.replace(/ /g, '-')}`)?.classList.remove('active');
+            }
+            currentClass = className;
+            document.getElementById(`btn-${className.replace(/ /g, '-')}`)?.classList.add('active');
+
+            try {
+                const res = await fetch(`/api/presets/${encodeURIComponent(className)}`);
+                const presets = await res.json();
+                const grid = document.getElementById('presets-grid');
+                
+                document.getElementById('global-stats').innerText = `TOTAL PRESETS: ${presets.length}`;
+
+                if(presets.length === 0) {
+                    grid.innerHTML = `<div class="col-span-full text-center py-20 text-xs tracking-widest text-slate-500 uppercase">Sin registros en esta ubicación</div>`;
+                    return;
+                }
+
+                grid.innerHTML = presets.map((p, index) => {
+                    const thumb = p.image_urls.length > 0 ? p.image_urls[0] : '';
+                    return `
+                        <div onclick='openModal(${JSON.stringify(p)})' class="preset-card rounded-lg overflow-hidden flex flex-col cursor-pointer relative">
+                            <div class="aspect-[4/5] bg-[#070a0e] overflow-hidden relative flex items-center justify-center">
+                                ${thumb ? `<img src="${thumb}" loading="lazy" class="object-cover w-full h-full transition-transform duration-500 hover:scale-105"/>` : '<span class="text-xs text-slate-600 tracking-widest uppercase">No Media</span>'}
+                                <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-4 pt-12">
+                                    <h3 class="text-sm font-bold truncate text-white tracking-wide" title="${p.title}">${p.title || 'Sin Título'}</h3>
+                                    <div class="text-xs text-slate-400 truncate mt-0.5">@${p.creator || 'Anónimo'}</div>
+                                </div>
+                            </div>
+                            <div class="px-4 py-3 bg-[#0c1015] flex justify-between items-center text-[11px] font-mono text-slate-400 border-t border-[#141b23]">
+                                <span class="flex items-center gap-1">📥 ${p.downloads}</span>
+                                <span class="flex items-center gap-1">❤️ ${p.favorites}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch(e) { console.error("Error loading presets:", e); }
+        }
+
+        function openModal(preset) {
+            document.getElementById('modal-title').innerText = preset.title || 'Sin Título';
+            document.getElementById('modal-class-name').innerText = preset.class;
+            document.getElementById('modal-creator').innerText = preset.creator || 'Anónimo';
+            document.getElementById('modal-date').innerText = preset.date || 'N/A';
+            document.getElementById('modal-id').innerText = preset.id;
+            document.getElementById('modal-stat-dl').innerText = preset.downloads;
+            document.getElementById('modal-stat-views').innerText = preset.views;
+            document.getElementById('modal-stat-fav').innerText = preset.favorites;
+            
+            const mainPreview = document.getElementById('modal-main-preview');
+            const thumbsContainer = document.getElementById('modal-thumbnails');
+            
+            if (preset.image_urls && preset.image_urls.length > 0) {
+                mainPreview.src = preset.image_urls[0];
+                thumbsContainer.innerHTML = preset.image_urls.map((url, i) => `
+                    <div onclick="document.getElementById('modal-main-preview').src='${url}'" class="h-16 w-16 bg-[#090c10] rounded border border-[#1a232c] hover:border-[#ffcc4d] cursor-pointer overflow-hidden flex-none">
+                        <img src="${url}" class="w-full h-full object-cover" />
+                    </div>
+                `).join('');
+            } else {
+                mainPreview.src = '';
+                thumbsContainer.innerHTML = '';
+            }
+
+            const dlContainer = document.getElementById('modal-download-container');
+            if (preset.download_url) {
+                dlContainer.innerHTML = `
+                    <a href="${preset.download_url}" download class="bdo-gold-gradient text-black font-bold text-xs tracking-widest text-center uppercase w-full py-3.5 rounded-md hover:brightness-110 transition-all block shadow-lg shadow-yellow-500/5">
+                        Inyectar parametraje local
+                    </a>
+                `;
+            } else {
+                dlContainer.innerHTML = `<div class="text-center text-xs text-slate-500 italic tracking-wider">No se vinculó estructura binaria original</div>`;
+            }
+
+            const modal = document.getElementById('detail-modal');
+            modal.classList.remove('hidden');
+            setTimeout(() => modal.classList.remove('opacity-0'), 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('detail-modal');
+            modal.classList.add('opacity-0');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
