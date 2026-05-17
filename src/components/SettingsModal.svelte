@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
-  import { saveConfig } from '../tauri/album';
+  import { saveConfig, openLogs } from '../tauri/album';
   import type { AppConfig } from '../tauri/album';
 
   export let config: AppConfig;
@@ -106,6 +106,7 @@
     {/if}
 
     <div class="actions">
+      <button class="btn-cancel" on:click={() => openLogs().catch(() => {})}>Open Logs</button>
       <button class="btn-cancel" on:click={close}>Cancel</button>
       <button class="btn-gold" on:click={save} disabled={saving}>
         {saving ? 'Saving…' : 'Save'}

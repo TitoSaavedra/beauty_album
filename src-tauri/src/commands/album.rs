@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use tauri::State;
 
-use crate::services::album_service;
+use crate::services::{album_service, scrapper_service};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -22,7 +22,7 @@ pub fn get_presets(
 }
 
 #[tauri::command]
-pub fn inject_preset(download_path: String, output_dir: String) -> Result<(), String> {
+pub fn inject_preset(download_path: String, output_dir: String, state: State<AppState>) -> Result<(), String> {
     use std::fs;
     use std::path::Path;
 
@@ -53,6 +53,10 @@ pub fn inject_preset(download_path: String, output_dir: String) -> Result<(), St
 
     fs::copy(src, out.join(file_name)).map_err(|e| e.to_string())?;
 
+    let config = state.0.lock().map_err(|e| e.to_string())?;
+    let album_dir = PathBuf::from(&config.album_dir);
+    scrapper_service::write_log_sync(&album_dir, &format!("[USER ] Injected preset: {}", file_name));
+
     Ok(())
 }
 
@@ -81,5 +85,19 @@ pub fn open_file(path: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_logs(state: State<AppState>) -> Result<(), String> {
+    let config = state.0.lock().map_err(|e| e.to_string())?;
+    let base = std::path::PathBuf::from(&config.album_dir);
+    scrapper_service::write_log_sync(&base, "[USER ] Opened logs in VS Code");
+    std::process::Command::new("code")
+        .arg(base.join("scrapper.log"))
+        .arg(base.join("server.log"))
+        .arg(base.join("tauri.log"))
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }

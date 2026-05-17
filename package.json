@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:python": "python -m PyInstaller --onefile --name server-x86_64-pc-windows-msvc --distpath src-tauri/binaries --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on --collect-all playwright --noconfirm src-python/main.py"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

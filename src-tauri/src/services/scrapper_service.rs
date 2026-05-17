@@ -28,7 +28,7 @@ pub async fn run(
     cancel: Arc<AtomicBool>,
 ) -> Result<(), AppError> {
     wait_for_server().await?;
-    write_log(album_dir, "Scrapper started via FastAPI").await;
+    write_log(album_dir, "[SYNC ] Scrapper started via FastAPI").await;
 
     let client = reqwest::Client::new();
 
@@ -65,14 +65,14 @@ pub async fn run(
             _ = tokio::time::sleep(Duration::from_millis(100)) => {
                 if cancel.load(Ordering::Relaxed) {
                     client.post(format!("{}/stop", SERVER)).send().await.ok();
-                    write_log(album_dir, "Scrapper cancelled by user").await;
+                    write_log(album_dir, "[USER ] Scrapper cancelled by user").await;
                     break;
                 }
             }
         }
     }
 
-    write_log(album_dir, "Scrapper finished").await;
+    write_log(album_dir, "[SYNC ] Scrapper finished").await;
     Ok(())
 }
 
@@ -114,6 +114,69 @@ fn drain_events(buf: &mut String, app: &AppHandle) {
     }
 }
 
+pub async fn watch_input_dir(
+    app: AppHandle,
+    input_dir: std::path::PathBuf,
+    album_dir: std::path::PathBuf,
+) {
+    let mut known = collect_input_files(&input_dir);
+    write_log(
+        &album_dir,
+        &format!("[WATCH] Watching input dir: {} ({} known file(s))", input_dir.display(), known.len()),
+    ).await;
+
+    loop {
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        let current = collect_input_files(&input_dir);
+        let new_files: Vec<String> = current
+            .difference(&known)
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        known = current;
+        if !new_files.is_empty() {
+            write_log(
+                &album_dir,
+                &format!("[WATCH] New file(s) detected: {} — notifying frontend", new_files.join(", ")),
+            ).await;
+            let _ = app.emit("folder_changed", new_files);
+            write_log(&album_dir, "[WATCH] Cooldown 60s before next watch poll").await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+    }
+}
+
+fn collect_input_files(dir: &std::path::Path) -> std::collections::HashSet<std::path::PathBuf> {
+    let mut files = std::collections::HashSet::new();
+    collect_recursive(dir, &mut files);
+    files
+}
+
+fn collect_recursive(dir: &std::path::Path, files: &mut std::collections::HashSet<std::path::PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if p.is_file() {
+            files.insert(p);
+        } else if p.is_dir() {
+            collect_recursive(&p, files);
+        }
+    }
+}
+
+pub async fn pending_count() -> Result<usize, AppError> {
+    wait_for_server().await?;
+    let client = reqwest::Client::new();
+    let val = client
+        .get(format!("{}/pending", SERVER))
+        .send()
+        .await
+        .map_err(|e| AppError::Scrape(format!("GET /pending failed: {}", e)))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| AppError::Scrape(format!("parse /pending failed: {}", e)))?;
+    Ok(val["count"].as_u64().unwrap_or(0) as usize)
+}
+
 async fn wait_for_server() -> Result<(), AppError> {
     let client = reqwest::Client::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(READY_TIMEOUT_SECS);
@@ -130,12 +193,21 @@ async fn wait_for_server() -> Result<(), AppError> {
     }
 }
 
-async fn write_log(album_dir: &Path, msg: &str) {
+pub async fn write_log(album_dir: &Path, msg: &str) {
     use tokio::io::AsyncWriteExt;
     let path = album_dir.join("tauri.log");
     if let Ok(mut f) = tokio::fs::OpenOptions::new().create(true).append(true).open(&path).await {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        let line = format!("[{}] [INFO ] {}\n", ts, msg);
+        let line = format!("[{}] {}\n", ts, msg);
         let _ = f.write_all(line.as_bytes()).await;
+    }
+}
+
+pub fn write_log_sync(album_dir: &Path, msg: &str) {
+    use std::io::Write;
+    let path = album_dir.join("tauri.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let _ = writeln!(f, "[{}] {}", ts, msg);
     }
 }

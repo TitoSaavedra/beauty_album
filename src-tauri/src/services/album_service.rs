@@ -115,6 +115,7 @@ pub fn get_presets(base_dir: &Path, class_name: &str) -> Result<Vec<serde_json::
             .unwrap_or_default();
 
         data["image_paths"] = serde_json::json!(image_paths);
+        data["preset_id"] = serde_json::json!(preset_id);
 
         let download_path = data
             .get("customization_file")

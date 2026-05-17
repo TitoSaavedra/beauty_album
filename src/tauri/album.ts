@@ -49,3 +49,9 @@ export const runScrapper = (): Promise<void> =>
 
 export const stopScrapper = (): Promise<void> =>
     invoke('stop_scrapper');
+
+export const checkPending = (): Promise<number> =>
+    invoke('check_pending');
+
+export const openLogs = (): Promise<void> =>
+    invoke('open_logs');

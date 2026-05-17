@@ -1,5 +1,10 @@
 # Rust / Tauri
 src-tauri/target/
+src-tauri/binaries/
+
+# PyInstaller artifacts
+build/
+*.spec
 
 # Frontend build
 dist/

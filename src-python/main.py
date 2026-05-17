@@ -84,6 +84,18 @@ async def stop_scrape():
     return {"ok": True}
 
 
+@app.get("/pending")
+async def pending_count():
+    from scrapper import _scan_local_presets, _preset_age_days, RECENT_DAYS
+    local = _scan_local_presets(INPUT_DIR)
+    count = 0
+    for pid in local:
+        age = _preset_age_days(ALBUM_DIR, pid)
+        if age is None or age >= RECENT_DAYS:
+            count += 1
+    return {"count": count}
+
+
 @app.get("/health")
 async def health():
     return {"ok": True}

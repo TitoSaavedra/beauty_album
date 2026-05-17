@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fly } from 'svelte/transition';
   import type { PresetEntry } from '../../tauri/album';
   import PresetCard from './PresetCard.svelte';
 
@@ -27,7 +28,9 @@
 {:else}
   <div class="grid">
     {#each presets as preset (preset.preset_id ?? preset.image_paths?.[0] ?? Math.random())}
-      <PresetCard {preset} />
+      <div in:fly={{ y: 20, duration: 280, opacity: 0 }}>
+        <PresetCard {preset} />
+      </div>
     {/each}
   </div>
 {/if}

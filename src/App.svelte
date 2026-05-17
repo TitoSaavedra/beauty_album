@@ -10,6 +10,7 @@
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import ToastContainer from './components/ToastContainer.svelte';
   import { appConfig } from './stores/appConfig';
+  import { toast } from './stores/toast';
 
   interface ScrapperProgress {
     preset_id: string;
@@ -35,10 +36,20 @@
   let presetsError = '';
 
   onMount(async () => {
+    listen<string[]>('folder_changed', ({ payload: files }) => {
+      const label = files.length === 1 ? files[0] : `${files.length} new presets`;
+      toast.show(`New preset found: ${label}`, 'success', 4000);
+      if (!scrapperRunning) startScraper();
+    });
+
     try {
       config = await api.getConfig();
       appConfig.set(config);
-      if (config.album_dir) await loadClasses();
+      if (config.album_dir) {
+        await loadClasses();
+        const pending = await api.checkPending();
+        if (pending > 0) startScraper();
+      }
     } catch { /* config not yet saved */ }
   });
 
@@ -56,12 +67,22 @@
     }
   }
 
-  async function loadClasses() {
+  async function loadClasses(keepSelected = false) {
     loadingClasses = true;
     classesError = '';
     try {
+      const prev = selectedClass;
       classes = await api.getClasses();
-      if (classes.length > 0) await selectClass(classes[0].name);
+      const target = keepSelected && prev && classes.some(c => c.name === prev)
+        ? prev
+        : classes[0]?.name;
+      if (!target) return;
+      if (keepSelected && target === prev) {
+        // Refresh in-place: Svelte only animates truly new preset_ids
+        try { presets = await api.getPresets(target); } catch (err) { presetsError = String(err); }
+      } else {
+        await selectClass(target);
+      }
     } catch (e) {
       classesError = String(e);
     } finally {
@@ -91,6 +112,13 @@
     scrapperError = '';
 
     const unlisten = await listen<ScrapperProgress>('scrapper_progress', ({ payload }) => {
+      if (payload.status === 'done') {
+        toast.show(payload.message, 'success', 6000);
+        scrapperMsg = '';
+        scrapperCurrent = 0;
+        scrapperTotal = 0;
+        return;
+      }
       scrapperCurrent = payload.current;
       scrapperTotal = payload.total;
       scrapperMsg = payload.message;
@@ -98,16 +126,23 @@
       if (payload.status === 'cancelled') scrapperMsg = 'Cancelled';
     });
 
+    let alreadyRunning = false;
     try {
       await api.runScrapper();
-      scrapperMsg = 'Done';
     } catch (e) {
-      scrapperMsg = String(e);
-      scrapperError = String(e);
+      const msg = String(e);
+      if (msg.includes('409') || msg.includes('Conflict')) {
+        alreadyRunning = true;
+      } else {
+        scrapperMsg = msg;
+        scrapperError = msg;
+      }
     } finally {
-      scrapperRunning = false;
       unlisten();
-      if (config.album_dir) await loadClasses();
+      if (!alreadyRunning) {
+        scrapperRunning = false;
+        if (config.album_dir) await loadClasses(true);
+      }
     }
   }
 
@@ -143,7 +178,7 @@
       {#if scrapperRunning}
         <button class="btn-stop" on:click={stopScraper} title="Stop scrapping">Stop</button>
       {:else}
-        <button class="btn-sync" on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
+        <button class="btn-sync" style="display:none" on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
       {/if}
       <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
     </div>
