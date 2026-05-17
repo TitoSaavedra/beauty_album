@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import * as api from './tauri/album';
   import type { ClassEntry, PresetEntry, AppConfig } from './tauri/album';
   import ClassList from './features/album/ClassList.svelte';
@@ -10,7 +11,20 @@
   import ToastContainer from './components/ToastContainer.svelte';
   import { appConfig } from './stores/appConfig';
 
-  let config: AppConfig = { album_dir: '', bdo_output_dir: '' };
+  interface ScrapperProgress {
+    preset_id: string;
+    status: string;
+    message: string;
+    current: number;
+    total: number;
+  }
+
+  let config: AppConfig = { album_dir: '', bdo_output_dir: '', album_input_dir: '' };
+  let scrapperRunning = false;
+  let scrapperCurrent = 0;
+  let scrapperTotal = 0;
+  let scrapperMsg = '';
+  let scrapperError = '';
   let settingsOpen = false;
   let classes: ClassEntry[] = [];
   let selectedClass: string | null = null;
@@ -67,6 +81,39 @@
   function handleSelectClass(e: CustomEvent<string>) {
     selectClass(e.detail);
   }
+
+  async function startScraper() {
+    if (scrapperRunning) return;
+    scrapperRunning = true;
+    scrapperCurrent = 0;
+    scrapperTotal = 0;
+    scrapperMsg = 'Starting...';
+    scrapperError = '';
+
+    const unlisten = await listen<ScrapperProgress>('scrapper_progress', ({ payload }) => {
+      scrapperCurrent = payload.current;
+      scrapperTotal = payload.total;
+      scrapperMsg = payload.message;
+      if (payload.status === 'error') scrapperError = payload.message;
+      if (payload.status === 'cancelled') scrapperMsg = 'Cancelled';
+    });
+
+    try {
+      await api.runScrapper();
+      scrapperMsg = 'Done';
+    } catch (e) {
+      scrapperMsg = String(e);
+      scrapperError = String(e);
+    } finally {
+      scrapperRunning = false;
+      unlisten();
+      if (config.album_dir) await loadClasses();
+    }
+  }
+
+  async function stopScraper() {
+    await api.stopScrapper();
+  }
 </script>
 
 <div class="app">
@@ -92,8 +139,30 @@
         TOTAL PRESETS: {presets.length}
       {/if}
     </div>
-    <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
+    <div class="nav-actions">
+      {#if scrapperRunning}
+        <button class="btn-stop" on:click={stopScraper} title="Stop scrapping">Stop</button>
+      {:else}
+        <button class="btn-sync" on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
+      {/if}
+      <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
+    </div>
   </nav>
+
+  {#if scrapperRunning || scrapperMsg}
+    <div class="scrapper-strip" class:has-error={!!scrapperError}>
+      <div
+        class="scrapper-fill"
+        style="width: {scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0}%"
+      ></div>
+      <span class="scrapper-label">
+        {#if scrapperTotal > 0}
+          {scrapperCurrent}/{scrapperTotal} —
+        {/if}
+        {scrapperMsg}
+      </span>
+    </div>
+  {/if}
 
   <div class="main-layout">
     <aside class="sidebar">
@@ -185,6 +254,88 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-sync {
+    padding: 0 14px;
+    height: 34px;
+    background: transparent;
+    border: 1px solid rgba(184, 134, 11, 0.4);
+    border-radius: 5px;
+    color: #b3861b;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+  }
+
+  .btn-sync:hover:not(:disabled) {
+    border-color: #ffcc4d;
+    color: #ffcc4d;
+    background: rgba(184, 134, 11, 0.08);
+  }
+
+  .btn-stop {
+    padding: 0 14px;
+    height: 34px;
+    background: transparent;
+    border: 1px solid rgba(220, 60, 60, 0.5);
+    border-radius: 5px;
+    color: #dc3c3c;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+  }
+
+  .btn-stop:hover {
+    border-color: #ff5555;
+    color: #ff5555;
+    background: rgba(220, 60, 60, 0.08);
+  }
+
+  .scrapper-strip {
+    position: relative;
+    height: 28px;
+    background: #0c1017;
+    border-bottom: 1px solid #1a232c;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .scrapper-strip.has-error .scrapper-fill {
+    background: rgba(220, 60, 60, 0.35);
+  }
+
+  .scrapper-fill {
+    position: absolute;
+    inset: 0;
+    background: rgba(184, 134, 11, 0.18);
+    transition: width 0.3s ease;
+  }
+
+  .scrapper-label {
+    position: relative;
+    font-size: 10px;
+    font-family: monospace;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    padding: 0 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .btn-settings {

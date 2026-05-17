@@ -5,6 +5,7 @@ pub enum AppError {
     NotFound(String),
     Io(String),
     Parse(String),
+    Scrape(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -13,6 +14,7 @@ impl std::fmt::Display for AppError {
             AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
             AppError::Io(msg) => write!(f, "IO error: {}", msg),
             AppError::Parse(msg) => write!(f, "Parse error: {}", msg),
+            AppError::Scrape(msg) => write!(f, "Scrape error: {}", msg),
         }
     }
 }

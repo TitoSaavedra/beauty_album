@@ -10,14 +10,16 @@
 
   let albumDir = config.album_dir;
   let bdoOutputDir = config.bdo_output_dir;
+  let albumInputDir = config.album_input_dir;
   let saving = false;
   let error = '';
 
-  async function pickFolder(target: 'album' | 'bdo') {
+  async function pickFolder(target: 'album' | 'bdo' | 'input') {
     const selected = await openDialog({ directory: true, multiple: false });
     if (typeof selected === 'string') {
       if (target === 'album') albumDir = selected;
-      else bdoOutputDir = selected;
+      else if (target === 'bdo') bdoOutputDir = selected;
+      else albumInputDir = selected;
     }
   }
 
@@ -25,7 +27,11 @@
     saving = true;
     error = '';
     try {
-      const updated: AppConfig = { album_dir: albumDir.trim(), bdo_output_dir: bdoOutputDir.trim() };
+      const updated: AppConfig = {
+        album_dir: albumDir.trim(),
+        bdo_output_dir: bdoOutputDir.trim(),
+        album_input_dir: albumInputDir.trim(),
+      };
       await saveConfig(updated);
       dispatch('save', updated);
     } catch (e) {
@@ -80,6 +86,21 @@
       </div>
     </div>
 
+    <div class="field">
+      <label class="field-label" for="album-input">Album Input Directory</label>
+      <p class="field-hint">Folder containing preset files (.pab) to be downloaded from Garmoth</p>
+      <div class="input-row">
+        <input
+          id="album-input"
+          class="field-input"
+          type="text"
+          bind:value={albumInputDir}
+          placeholder="Path to preset input folder"
+        />
+        <button class="btn-browse" on:click={() => pickFolder('input')} title="Browse">...</button>
+      </div>
+    </div>
+
     {#if error}
       <p class="error-msg">{error}</p>
     {/if}
@@ -129,6 +150,13 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .field-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 0;
+    opacity: 0.7;
   }
 
   .field-label {

@@ -23,6 +23,7 @@ export interface PresetEntry {
 export interface AppConfig {
     album_dir: string;
     bdo_output_dir: string;
+    album_input_dir: string;
 }
 
 export const getClasses = (): Promise<ClassEntry[]> =>
@@ -42,3 +43,9 @@ export const injectPreset = (downloadPath: string, outputDir: string): Promise<v
 
 export const openFile = (path: string): Promise<void> =>
     invoke('open_file', { path });
+
+export const runScrapper = (): Promise<void> =>
+    invoke('run_scrapper');
+
+export const stopScrapper = (): Promise<void> =>
+    invoke('stop_scrapper');
