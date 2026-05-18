@@ -16,18 +16,20 @@ from sse_starlette.sse import EventSourceResponse
 # ── CLI args ───────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config-path", type=Path, required=True)
+parser.add_argument("--album-dir", type=Path, required=True)
+parser.add_argument("--input-dir", type=Path, required=True)
+parser.add_argument("--log-dir", type=Path, required=True)
 args = parser.parse_args()
 
-_raw = json.loads(args.config_path.read_text(encoding="utf-8"))
-ALBUM_DIR = Path(_raw.get("album_dir", ""))
-INPUT_DIR = Path(_raw.get("album_input_dir", ""))
+ALBUM_DIR = args.album_dir
+INPUT_DIR = args.input_dir
+LOG_DIR = args.log_dir
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
-ALBUM_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-_file_handler = logging.FileHandler(ALBUM_DIR / "server.log", encoding="utf-8")
+_file_handler = logging.FileHandler(LOG_DIR / "server.log", encoding="utf-8")
 _file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5s] %(name)s — %(message)s"))
 
 logging.root.setLevel(logging.INFO)
@@ -107,7 +109,7 @@ async def _run_scraper_task() -> None:
     global _running
     from scrapper import run_scraper
     try:
-        await run_scraper(ALBUM_DIR, INPUT_DIR, _queue, _cancel)
+        await run_scraper(ALBUM_DIR, INPUT_DIR, _queue, _cancel, LOG_DIR)
     except Exception as exc:
         log.error("Scraper crashed: %s", exc)
         await _queue.put({"type": "done", "n_done": 0, "n_skip": 0, "n_error": 1})

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { presetDetail } from '../../stores/presetDetail';
-  import { appConfig } from '../../stores/appConfig';
   import { confirmDialog } from '../../stores/confirmDialog';
   import { toast } from '../../stores/toast';
   import { injectPreset } from '../../tauri/album';
@@ -29,14 +28,12 @@
 
   function inject() {
     if (!preset?.download_path) return;
-    const outputDir = $appConfig.bdo_output_dir;
-    if (!outputDir) return;
     confirmDialog.show({
       title: 'Inject Preset',
       text: 'All files in the BDO output directory will be deleted and replaced with this preset. This cannot be undone.',
       confirmLabel: 'Inject',
       onConfirm: async () => {
-        await injectPreset(preset!.download_path!, outputDir);
+        await injectPreset(preset!.download_path!);
         presetDetail.set(null);
         toast.show('Preset injected successfully');
       },

@@ -29,5 +29,11 @@ pub fn save(app: &AppHandle, config: &AppConfig) -> Result<(), AppError> {
     }
     let content = serde_json::to_string_pretty(config)?;
     fs::write(&path, content)?;
+    if !config.bdo_docs_dir.is_empty() {
+        let _ = fs::create_dir_all(config.presets_dir());
+        let _ = fs::create_dir_all(config.customization_dir());
+        let _ = fs::create_dir_all(config.to_download_dir());
+        let _ = fs::create_dir_all(config.logs_dir());
+    }
     Ok(())
 }
