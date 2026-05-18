@@ -79,25 +79,27 @@ The installed app is self-contained — no Python or Node runtime required on th
 
 ## Configuration
 
-On first launch, open Settings (⚙ top-right) and set:
+On first launch, open Settings (⚙ top-right) and set the **BDO Documents Directory** — the root folder where Black Desert Online writes its user files (e.g. `C:\Users\<user>\Documents\Black Desert`).
 
-| Field | Description |
+All app directories are derived from this single path:
+
+| Directory | Path |
 |---|---|
-| Album Directory | Root folder containing scraped class subdirectories |
-| BDO Output Directory | Black Desert Online customization output path |
-| Album Input Directory | Folder where new `.pab` preset files are dropped |
+| Preset archive | `<bdo_docs_dir>/Beauty Album/Presets/` |
+| Customization output | `<bdo_docs_dir>/Customization/` |
+| Preset input (drop zone) | `<bdo_docs_dir>/Beauty Album/to_download/` |
+| Logs | `<bdo_docs_dir>/Beauty Album/Logs/` |
 
-Config is saved to `%APPDATA%\com.bdo.beauty-album\config.json` on Windows.
+Config is saved to `%APPDATA%\com.bdo.beauty-album\config.json`.
 
 ---
 
 ## How it works
 
 - On startup, Rust checks for pending (unsynced) presets and starts the scraper automatically if any are found.
-- A background watcher polls `Album Input Directory` every 20 seconds for new files. When files appear, the scraper starts and a toast notification is shown.
-- The scraper communicates with a local FastAPI server (port 8765) via HTTP + SSE. Progress is relayed to the UI in real time.
-- After sync, the preset grid updates in place — only new cards animate in.
-- All Rust-side events are logged to `tauri.log` in the album directory with structured `[TAG ]` prefixes (`[USER ]`, `[SYNC ]`, `[WATCH]`, `[INFO ]`). Open them from Settings → Open Logs.
+- A background watcher polls the input directory every 20 seconds for new `.pab` files. When files appear, the scraper starts and a toast notification is shown.
+- The scraper communicates with a local FastAPI server (port 8765) via HTTP + SSE. Progress is relayed to the UI in real time — the preset grid updates after each individual preset completes.
+- All Rust-side events are logged to `tauri.log` in the Logs directory with structured `[TAG ]` prefixes (`[SYNC ]`, `[WATCH]`, `[USER ]`, `[ERR  ]`). Open them from Settings → Open Logs.
 
 ---
 
