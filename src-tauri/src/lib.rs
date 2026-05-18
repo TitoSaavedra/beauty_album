@@ -38,11 +38,14 @@ pub fn run() {
 
             #[cfg(not(debug_assertions))]
             let child = {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
                 let exe = app.path().resource_dir()
                     .map(|d| d.join("server.exe"))
                     .unwrap_or_default();
                 Command::new(&exe)
                     .arg(format!("--config-path={}", config_path.display()))
+                    .creation_flags(CREATE_NO_WINDOW)
                     .spawn()
                     .ok()
             };

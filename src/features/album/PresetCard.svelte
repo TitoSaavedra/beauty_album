@@ -53,8 +53,7 @@
 
   .preset-card:hover {
     border-color: #ffcc4d;
-    box-shadow: 0 0 20px rgba(255, 204, 77, 0.1);
-    transform: translateY(-4px);
+    box-shadow: 0 0 24px rgba(255, 204, 77, 0.12);
   }
 
   .thumb-wrap {

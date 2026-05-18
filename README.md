@@ -1,201 +1,103 @@
 # BDO Beauty Album
 
-A desktop viewer for Black Desert Online beauty presets, built with **Tauri 2.0**, **Rust**, and **Svelte 4**.
+Desktop viewer for Black Desert Online beauty presets. Browses local preset archives, displays images and metadata, syncs new presets from Garmoth automatically, and injects customization files into the game output directory.
 
-Browse preset classes, view images in a lightbox, and download customization files — all from a native desktop app.
+Built with Tauri 2.0, Rust, Svelte 4, and a bundled Python/FastAPI scraper.
 
 ---
 
-## Tech Stack
+## Stack
 
-| Layer | Technology |
-|---|---|
-| Desktop shell | Tauri 2.0 |
-| Backend | Rust (2021 edition) |
-| Frontend | Svelte 4 + TypeScript |
-| Build tool | Vite 5 |
-| Styling | Tailwind CSS v3 + CSS custom properties |
-| Package manager | pnpm |
+- **Shell**: Tauri 2.0
+- **Backend**: Rust 2021
+- **Frontend**: Svelte 4 + TypeScript + Vite 5
+- **Scraper**: Python 3.11, FastAPI, Playwright (Firefox)
+- **Styling**: Tailwind CSS v3
 
 ---
 
 ## Prerequisites
 
-| Tool | Version | Notes |
-|---|---|---|
-| [Rust](https://rustup.rs) | stable (≥ 1.77) | Install via `rustup` with the MSVC toolchain on Windows |
-| [Node.js](https://nodejs.org) | ≥ 18 | LTS recommended |
-| [pnpm](https://pnpm.io) | ≥ 9 | `npm install -g pnpm` |
-| [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) | — | Pre-installed on Windows 11; required at runtime |
-
-> **Windows users**: make sure the [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload) are installed before running `rustup`.
+- [Rust](https://rustup.rs) stable with the MSVC toolchain (`rustup default stable-msvc`)
+- [Node.js](https://nodejs.org) ≥ 18 + pnpm (`npm i -g pnpm`)
+- [Python](https://www.python.org) 3.11
+- [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 11)
+- [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the C++ workload
 
 ---
 
-## Getting Started
-
-### 1. Clone the repository
+## Setup
 
 ```bash
-git clone https://github.com/your-user/beauty-album.git
-cd beauty-album
-```
-
-### 2. Install JavaScript dependencies
-
-```bash
+# 1. Install JS dependencies
 pnpm install
+
+# 2. Install Python dependencies
+pip install -r requirements.txt
+
+# 3. Install the Playwright Firefox browser (one-time)
+playwright install firefox
+
+# 4. Build the bundled Python server (required before first cargo build/check)
+npm run build:python
 ```
-
-### 3. Run in development mode
-
-Starts the Vite dev server and the Tauri window with hot-reload:
-
-```bash
-pnpm run tauri dev
-```
-
-The app opens automatically. Changes to Svelte/TS files reload the UI instantly; Rust changes trigger a recompile.
 
 ---
 
-## Build
-
-### Production desktop app
-
-Compiles the frontend, links the Rust binary, and packages both MSI and NSIS installers:
+## Development
 
 ```bash
-pnpm run tauri build
+pnpm tauri dev
 ```
 
-Output artifacts:
+Starts the Vite dev server and the Tauri window. The Rust backend spawns `src-python/main.py` directly via the system Python interpreter.
 
-| Format | Path |
+---
+
+## Production build
+
+```bash
+pnpm tauri build
+```
+
+Runs in sequence:
+1. `vite build` — compiles the Svelte frontend
+2. `npm run build:python` — PyInstaller bundles the Python server into `src-tauri/binaries/server-x86_64-pc-windows-msvc.exe`
+3. `cargo tauri build` — compiles Rust, links everything, produces MSI and NSIS installers
+
+Output:
+
+| Artifact | Path |
 |---|---|
 | Executable | `src-tauri/target/release/beauty-album.exe` |
-| MSI installer | `src-tauri/target/release/bundle/msi/BDO Beauty Album_<version>_x64_en-US.msi` |
-| NSIS installer | `src-tauri/target/release/bundle/nsis/BDO Beauty Album_<version>_x64-setup.exe` |
+| MSI | `src-tauri/target/release/bundle/msi/` |
+| NSIS | `src-tauri/target/release/bundle/nsis/` |
 
-### Frontend only (no Tauri)
-
-```bash
-pnpm run build
-```
-
-Output goes to `dist/`.
-
-### Preview the production frontend
-
-```bash
-pnpm run preview
-```
-
----
-
-## Rust Commands
-
-Run these from inside the `src-tauri/` directory, or prefix with `--manifest-path src-tauri/Cargo.toml`.
-
-```bash
-# Type-check without producing a binary (fast)
-cargo check --manifest-path src-tauri/Cargo.toml
-
-# Compile in debug mode
-cargo build --manifest-path src-tauri/Cargo.toml
-
-# Compile in release mode
-cargo build --release --manifest-path src-tauri/Cargo.toml
-
-# Run lints
-cargo clippy --manifest-path src-tauri/Cargo.toml
-
-# Auto-format Rust source
-cargo fmt --manifest-path src-tauri/Cargo.toml
-```
-
----
-
-## Project Structure
-
-```
-beauty-album/
-├── src/                        # Svelte frontend
-│   ├── index.html
-│   ├── main.ts
-│   ├── App.svelte
-│   ├── components/
-│   │   ├── Lightbox.svelte
-│   │   └── SettingsModal.svelte
-│   ├── features/
-│   │   └── album/
-│   │       ├── ClassList.svelte
-│   │       ├── PresetCard.svelte
-│   │       └── PresetGrid.svelte
-│   ├── stores/
-│   │   └── lightbox.ts
-│   ├── styles/
-│   │   └── app.css
-│   └── tauri/
-│       └── album.ts            # Typed IPC wrappers
-│
-├── src-tauri/                  # Rust / Tauri backend
-│   ├── Cargo.toml
-│   ├── tauri.conf.json
-│   ├── capabilities/
-│   │   └── default.json
-│   ├── icons/
-│   │   └── icon.ico
-│   └── src/
-│       ├── lib.rs
-│       ├── main.rs
-│       ├── commands/
-│       │   ├── album.rs        # get_classes, get_presets, open_file
-│       │   └── config.rs       # get_config, save_config
-│       ├── errors/
-│       │   └── mod.rs
-│       ├── services/
-│       │   ├── album_service.rs
-│       │   └── config_service.rs
-│       └── state/
-│           └── mod.rs          # AppConfig, AppState
-│
-├── vite.config.ts
-├── tailwind.config.js
-├── postcss.config.js
-└── package.json
-```
+The installed app is self-contained — no Python or Node runtime required on the target machine. Firefox for Playwright must still be installed once (`playwright install firefox`).
 
 ---
 
 ## Configuration
 
-On first launch, click the **⚙** button in the top-right corner to open Settings:
+On first launch, open Settings (⚙ top-right) and set:
 
 | Field | Description |
 |---|---|
-| **Album Directory** | Path to the `beauty_album` folder containing class subdirectories |
-| **BDO Output Directory** | Path to the Black Desert Online output folder |
+| Album Directory | Root folder containing scraped class subdirectories |
+| BDO Output Directory | Black Desert Online customization output path |
+| Album Input Directory | Folder where new `.pab` preset files are dropped |
 
-Settings are saved to `config.json` in the OS app-config directory:
-
-| OS | Path |
-|---|---|
-| Windows | `%APPDATA%\com.bdo.beauty-album\config.json` |
-| macOS | `~/Library/Application Support/com.bdo.beauty-album/config.json` |
-| Linux | `~/.config/com.bdo.beauty-album/config.json` |
+Config is saved to `%APPDATA%\com.bdo.beauty-album\config.json` on Windows.
 
 ---
 
-## IPC Commands
+## How it works
 
-| Command | Description |
-|---|---|
-| `get_config` | Returns the current `AppConfig` |
-| `save_config` | Persists `AppConfig` to disk and updates runtime state |
-| `get_classes` | Lists class directories in the album folder |
-| `get_presets` | Lists presets for a given class, sorted by downloads |
-| `open_file` | Opens a file with the system default application |
+- On startup, Rust checks for pending (unsynced) presets and starts the scraper automatically if any are found.
+- A background watcher polls `Album Input Directory` every 20 seconds for new files. When files appear, the scraper starts and a toast notification is shown.
+- The scraper communicates with a local FastAPI server (port 8765) via HTTP + SSE. Progress is relayed to the UI in real time.
+- After sync, the preset grid updates in place — only new cards animate in.
+- All Rust-side events are logged to `tauri.log` in the album directory with structured `[TAG ]` prefixes (`[USER ]`, `[SYNC ]`, `[WATCH]`, `[INFO ]`). Open them from Settings → Open Logs.
 
 ---
 

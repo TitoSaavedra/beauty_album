@@ -93,7 +93,11 @@ pub fn open_logs(state: State<AppState>) -> Result<(), String> {
     let config = state.0.lock().map_err(|e| e.to_string())?;
     let base = std::path::PathBuf::from(&config.album_dir);
     scrapper_service::write_log_sync(&base, "[USER ] Opened logs in VS Code");
-    std::process::Command::new("code")
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("cmd")
+        .creation_flags(0x08000000)
+        .arg("/c")
+        .arg("code")
         .arg(base.join("scrapper.log"))
         .arg(base.join("server.log"))
         .arg(base.join("tauri.log"))
