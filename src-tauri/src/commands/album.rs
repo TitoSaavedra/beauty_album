@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use tauri::State;
 
 use crate::services::{album_service, scrapper_service};
@@ -7,8 +6,7 @@ use crate::state::AppState;
 #[tauri::command]
 pub fn get_classes(state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
     let config = state.0.lock().map_err(|e| e.to_string())?;
-    let base_dir = PathBuf::from(&config.album_dir);
-    album_service::get_classes(&base_dir).map_err(|e| e.to_string())
+    album_service::get_classes(&config.presets_dir()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -17,21 +15,22 @@ pub fn get_presets(
     state: State<AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let config = state.0.lock().map_err(|e| e.to_string())?;
-    let base_dir = PathBuf::from(&config.album_dir);
-    album_service::get_presets(&base_dir, &class_name).map_err(|e| e.to_string())
+    album_service::get_presets(&config.presets_dir(), &class_name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn inject_preset(download_path: String, output_dir: String, state: State<AppState>) -> Result<(), String> {
+pub fn inject_preset(download_path: String, state: State<AppState>) -> Result<(), String> {
     use std::fs;
     use std::path::Path;
 
-    let out = Path::new(&output_dir);
+    let config = state.0.lock().map_err(|e| e.to_string())?;
+    let out = config.customization_dir();
+
     if !out.is_dir() {
-        return Err(format!("Output directory not found: {}", output_dir));
+        return Err(format!("Output directory not found: {}", out.display()));
     }
 
-    for entry in fs::read_dir(out).map_err(|e| e.to_string())? {
+    for entry in fs::read_dir(&out).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         if path.is_dir() {
@@ -53,9 +52,7 @@ pub fn inject_preset(download_path: String, output_dir: String, state: State<App
 
     fs::copy(src, out.join(file_name)).map_err(|e| e.to_string())?;
 
-    let config = state.0.lock().map_err(|e| e.to_string())?;
-    let album_dir = PathBuf::from(&config.album_dir);
-    scrapper_service::write_log_sync(&album_dir, &format!("[USER ] Injected preset: {}", file_name));
+    scrapper_service::write_log_sync(&config.logs_dir(), &format!("[USER ] Injected preset: {}", file_name));
 
     Ok(())
 }
@@ -91,16 +88,16 @@ pub fn open_file(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_logs(state: State<AppState>) -> Result<(), String> {
     let config = state.0.lock().map_err(|e| e.to_string())?;
-    let base = std::path::PathBuf::from(&config.album_dir);
-    scrapper_service::write_log_sync(&base, "[USER ] Opened logs in VS Code");
+    let logs = config.logs_dir();
+    scrapper_service::write_log_sync(&logs, "[USER ] Opened logs in VS Code");
     use std::os::windows::process::CommandExt;
     std::process::Command::new("cmd")
         .creation_flags(0x08000000)
         .arg("/c")
         .arg("code")
-        .arg(base.join("scrapper.log"))
-        .arg(base.join("server.log"))
-        .arg(base.join("tauri.log"))
+        .arg(logs.join("scrapper.log"))
+        .arg(logs.join("server.log"))
+        .arg(logs.join("tauri.log"))
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())

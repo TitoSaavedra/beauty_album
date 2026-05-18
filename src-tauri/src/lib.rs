@@ -23,47 +23,55 @@ pub fn run() {
             app.manage(AppState(Mutex::new(initial_config)));
             app.manage(ScrapperCancelToken::default());
 
-            let config_path = app
-                .path()
-                .app_config_dir()
-                .map(|d| d.join("config.json"))
-                .unwrap_or_default();
+            let configured = {
+                let state = app.state::<AppState>();
+                let config = state.0.lock().unwrap();
+                !config.bdo_docs_dir.is_empty()
+            };
 
-            #[cfg(debug_assertions)]
-            let child = Command::new("python")
-                .arg(PathBuf::from(PYTHON_SERVER))
-                .arg(format!("--config-path={}", config_path.display()))
-                .spawn()
-                .ok();
+            let child = if configured {
+                let (album_dir, input_dir, logs_dir) = {
+                    let state = app.state::<AppState>();
+                    let config = state.0.lock().unwrap();
+                    (config.presets_dir(), config.to_download_dir(), config.logs_dir())
+                };
 
-            #[cfg(not(debug_assertions))]
-            let child = {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                let exe = app.path().resource_dir()
-                    .map(|d| d.join("server.exe"))
-                    .unwrap_or_default();
-                Command::new(&exe)
-                    .arg(format!("--config-path={}", config_path.display()))
-                    .creation_flags(CREATE_NO_WINDOW)
+                #[cfg(debug_assertions)]
+                let proc = Command::new("python")
+                    .arg(PathBuf::from(PYTHON_SERVER))
+                    .arg(format!("--album-dir={}", album_dir.display()))
+                    .arg(format!("--input-dir={}", input_dir.display()))
+                    .arg(format!("--log-dir={}", logs_dir.display()))
                     .spawn()
-                    .ok()
+                    .ok();
+
+                #[cfg(not(debug_assertions))]
+                let proc = {
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    let exe = app.path().resource_dir()
+                        .map(|d| d.join("server.exe"))
+                        .unwrap_or_default();
+                    Command::new(&exe)
+                        .arg(format!("--album-dir={}", album_dir.display()))
+                        .arg(format!("--input-dir={}", input_dir.display()))
+                        .arg(format!("--log-dir={}", logs_dir.display()))
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .spawn()
+                        .ok()
+                };
+
+                let watch_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    scrapper_service::watch_input_dir(watch_handle, input_dir, logs_dir).await;
+                });
+
+                proc
+            } else {
+                None
             };
 
             app.manage(PythonProcess(Mutex::new(child)));
-
-            let watch_handle = app.handle().clone();
-            let (input_dir, album_dir) = {
-                let state = app.state::<AppState>();
-                let config = state.0.lock().unwrap();
-                (
-                    std::path::PathBuf::from(&config.album_input_dir),
-                    std::path::PathBuf::from(&config.album_dir),
-                )
-            };
-            tauri::async_runtime::spawn(async move {
-                scrapper_service::watch_input_dir(watch_handle, input_dir, album_dir).await;
-            });
 
             Ok(())
         })
@@ -86,6 +94,17 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Ok(mut guard) = app.state::<PythonProcess>().0.lock() {
                     if let Some(mut child) = guard.take() {
+                        #[cfg(target_os = "windows")]
+                        {
+                            use std::os::windows::process::CommandExt;
+                            let pid = child.id();
+                            {
+                                let _ = Command::new("taskkill")
+                                    .creation_flags(0x08000000)
+                                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                                    .spawn();
+                            }
+                        }
                         let _ = child.kill();
                     }
                 }

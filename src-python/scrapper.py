@@ -18,11 +18,11 @@ RECENT_DAYS = 14
 log = logging.getLogger("scrapper")
 
 
-def _setup_log(album_dir: Path) -> None:
+def _setup_log(log_dir: Path) -> None:
     if log.handlers:
         return
-    album_dir.mkdir(parents=True, exist_ok=True)
-    handler = logging.FileHandler(album_dir / "scrapper.log", encoding="utf-8")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_dir / "scrapper.log", encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)-5s] %(message)s"))
     log.addHandler(handler)
     log.setLevel(logging.INFO)
@@ -111,7 +111,7 @@ def _link_local_file(preset_dir: Path, preset_id: str, local_info: dict | None) 
 
 # ── Preset processing ──────────────────────────────────────────────────────────
 
-async def _process_preset(page, album_dir: Path, preset_id: str, local_info: dict | None) -> None:
+async def _process_preset(page, album_dir: Path, preset_id: str, local_info: dict | None) -> str:
     class_hint: str | None = local_info["class"] if local_info else None
     is_valid, preset_dir = _check_integrity(album_dir, preset_id, class_hint)
 
@@ -200,7 +200,7 @@ async def _process_preset(page, album_dir: Path, preset_id: str, local_info: dic
         json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         (preset_dir / OK_FILENAME).touch()
         page.remove_listener("response", on_response)
-        return
+        return class_safe
 
     images: list[str] = []
     img_els = page.locator('img[src*="beauty-album/images/"]')
@@ -221,6 +221,7 @@ async def _process_preset(page, album_dir: Path, preset_id: str, local_info: dic
     _link_local_file(preset_dir, preset_id, local_info)
     (preset_dir / OK_FILENAME).touch()
     page.remove_listener("response", on_response)
+    return class_safe
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
@@ -230,8 +231,9 @@ async def run_scraper(
     input_dir: Path,
     queue: asyncio.Queue,
     cancel: asyncio.Event,
+    log_dir: Path | None = None,
 ) -> None:
-    _setup_log(album_dir)
+    _setup_log(log_dir if log_dir is not None else album_dir)
 
     local_presets = _scan_local_presets(input_dir)
     candidates = list(local_presets.items())
@@ -272,25 +274,30 @@ async def run_scraper(
             if cancel.is_set():
                 log.info("Cancelled by client")
                 await queue.put({"type": "progress", "preset_id": "", "status": "cancelled",
+                                 "class_hint": "",
                                  "message": "Scrapping cancelled", "current": idx, "total": total})
                 break
 
             current = idx + 1
+            class_hint = info["class"] if info else ""
             log.info("[%s] Processing (%d/%d)", preset_id, current, total)
             await queue.put({"type": "progress", "preset_id": preset_id, "status": "processing",
+                             "class_hint": class_hint,
                              "message": f"[{current}/{total}] Processing {preset_id}",
                              "current": current, "total": total})
             try:
-                await _process_preset(page, album_dir, preset_id, info)
+                actual_class = await _process_preset(page, album_dir, preset_id, info)
                 n_done += 1
                 log.info("[%s] Done", preset_id)
                 await queue.put({"type": "progress", "preset_id": preset_id, "status": "done",
+                                 "class_hint": actual_class or class_hint,
                                  "message": f"Preset {preset_id} complete",
                                  "current": current, "total": total})
             except Exception as exc:
                 n_error += 1
                 log.error("[%s] Error: %s", preset_id, exc)
                 await queue.put({"type": "progress", "preset_id": preset_id, "status": "error",
+                                 "class_hint": class_hint,
                                  "message": str(exc), "current": current, "total": total})
 
             await asyncio.sleep(1.0)

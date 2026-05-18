@@ -8,30 +8,29 @@
 
   const dispatch = createEventDispatcher<{ save: AppConfig; close: void }>();
 
-  let albumDir = config.album_dir;
-  let bdoOutputDir = config.bdo_output_dir;
-  let albumInputDir = config.album_input_dir;
+  let bdo_docs_dir = config.bdo_docs_dir;
   let saving = false;
   let error = '';
 
-  async function pickFolder(target: 'album' | 'bdo' | 'input') {
+  $: previewPaths = bdo_docs_dir.trim()
+    ? [
+        { label: 'Presets', path: bdo_docs_dir.trim() + '\\Beauty Album\\Presets' },
+        { label: 'Customization', path: bdo_docs_dir.trim() + '\\Customization' },
+        { label: 'Input', path: bdo_docs_dir.trim() + '\\Beauty Album\\to_download' },
+        { label: 'Logs', path: bdo_docs_dir.trim() + '\\Beauty Album\\Logs' },
+      ]
+    : [];
+
+  async function pickFolder() {
     const selected = await openDialog({ directory: true, multiple: false });
-    if (typeof selected === 'string') {
-      if (target === 'album') albumDir = selected;
-      else if (target === 'bdo') bdoOutputDir = selected;
-      else albumInputDir = selected;
-    }
+    if (typeof selected === 'string') bdo_docs_dir = selected;
   }
 
   async function save() {
     saving = true;
     error = '';
     try {
-      const updated: AppConfig = {
-        album_dir: albumDir.trim(),
-        bdo_output_dir: bdoOutputDir.trim(),
-        album_input_dir: albumInputDir.trim(),
-      };
+      const updated: AppConfig = { bdo_docs_dir: bdo_docs_dir.trim() };
       await saveConfig(updated);
       dispatch('save', updated);
     } catch (e) {
@@ -59,47 +58,30 @@
     <h2 class="modal-title">Settings</h2>
 
     <div class="field">
-      <label class="field-label" for="album-dir">Album Directory</label>
+      <label class="field-label" for="bdo-docs">Black Desert Documents Directory</label>
+      <p class="field-hint">Select the Black Desert Online documents folder — all subdirectories are created automatically.</p>
       <div class="input-row">
         <input
-          id="album-dir"
+          id="bdo-docs"
           class="field-input"
           type="text"
-          bind:value={albumDir}
-          placeholder="Path to beauty_album folder"
+          bind:value={bdo_docs_dir}
+          placeholder="e.g. C:\Users\You\Documents\Black Desert"
         />
-        <button class="btn-browse" on:click={() => pickFolder('album')} title="Browse">...</button>
+        <button class="btn-browse" on:click={pickFolder} title="Browse">...</button>
       </div>
     </div>
 
-    <div class="field">
-      <label class="field-label" for="bdo-output">BDO Output Directory</label>
-      <div class="input-row">
-        <input
-          id="bdo-output"
-          class="field-input"
-          type="text"
-          bind:value={bdoOutputDir}
-          placeholder="Path to BDO output folder"
-        />
-        <button class="btn-browse" on:click={() => pickFolder('bdo')} title="Browse">...</button>
+    {#if previewPaths.length > 0}
+      <div class="derived-paths">
+        {#each previewPaths as { label, path }}
+          <div class="derived-row">
+            <span class="derived-label">{label}</span>
+            <span class="derived-path">{path}</span>
+          </div>
+        {/each}
       </div>
-    </div>
-
-    <div class="field">
-      <label class="field-label" for="album-input">Album Input Directory</label>
-      <p class="field-hint">Folder containing preset files (.pab) to be downloaded from Garmoth</p>
-      <div class="input-row">
-        <input
-          id="album-input"
-          class="field-input"
-          type="text"
-          bind:value={albumInputDir}
-          placeholder="Path to preset input folder"
-        />
-        <button class="btn-browse" on:click={() => pickFolder('input')} title="Browse">...</button>
-      </div>
-    </div>
+    {/if}
 
     {#if error}
       <p class="error-msg">{error}</p>
@@ -131,7 +113,7 @@
     border: 1px solid rgba(184, 134, 11, 0.4);
     border-radius: 10px;
     padding: 28px 32px;
-    width: 480px;
+    width: 520px;
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -206,6 +188,36 @@
   .btn-browse:hover {
     border-color: var(--gold-dim);
     background: rgba(184, 134, 11, 0.1);
+  }
+
+  .derived-paths {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(15, 18, 25, 0.7);
+    border: 1px solid rgba(100, 110, 130, 0.2);
+    border-radius: 5px;
+    padding: 10px 12px;
+  }
+
+  .derived-row {
+    display: flex;
+    gap: 10px;
+    font-size: 11px;
+    font-family: monospace;
+    line-height: 1.6;
+  }
+
+  .derived-label {
+    color: var(--muted);
+    opacity: 0.7;
+    min-width: 90px;
+    flex-shrink: 0;
+  }
+
+  .derived-path {
+    color: #94a3b8;
+    word-break: break-all;
   }
 
   .error-msg {

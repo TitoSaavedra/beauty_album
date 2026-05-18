@@ -16,11 +16,12 @@
     preset_id: string;
     status: string;
     message: string;
+    class_name: string;
     current: number;
     total: number;
   }
 
-  let config: AppConfig = { album_dir: '', bdo_output_dir: '', album_input_dir: '' };
+  let config: AppConfig = { bdo_docs_dir: '' };
   let scrapperRunning = false;
   let scrapperCurrent = 0;
   let scrapperTotal = 0;
@@ -45,10 +46,12 @@
     try {
       config = await api.getConfig();
       appConfig.set(config);
-      if (config.album_dir) {
+      if (config.bdo_docs_dir) {
         await loadClasses();
         const pending = await api.checkPending();
         if (pending > 0) startScraper();
+      } else {
+        settingsOpen = true;
       }
     } catch { /* config not yet saved */ }
   });
@@ -96,7 +99,7 @@
     settingsOpen = false;
     selectedClass = null;
     presets = [];
-    if (config.album_dir) await loadClasses();
+    if (config.bdo_docs_dir) await loadClasses();
   }
 
   function handleSelectClass(e: CustomEvent<string>) {
@@ -112,23 +115,23 @@
     scrapperError = '';
 
     const unlisten = await listen<ScrapperProgress>('scrapper_progress', ({ payload }) => {
+      if (payload.total > 0) scrapperTotal = payload.total;
+      if (payload.current > 0) scrapperCurrent = payload.current;
+      if (payload.message) scrapperMsg = payload.message;
+
       if (payload.status === 'done') {
-        toast.show(payload.message, 'success', 6000);
-        scrapperMsg = '';
-        scrapperCurrent = 0;
-        scrapperTotal = 0;
-        return;
+        if (config.bdo_docs_dir) loadClasses(true);
+      } else if (payload.status === 'error') {
+        scrapperError = payload.message;
+      } else if (payload.status === 'cancelled') {
+        scrapperMsg = 'Cancelled';
       }
-      scrapperCurrent = payload.current;
-      scrapperTotal = payload.total;
-      scrapperMsg = payload.message;
-      if (payload.status === 'error') scrapperError = payload.message;
-      if (payload.status === 'cancelled') scrapperMsg = 'Cancelled';
     });
 
     let alreadyRunning = false;
     try {
-      await api.runScrapper();
+      const doneMsg = await api.runScrapper();
+      if (doneMsg) toast.show(doneMsg, 'success', 6000);
     } catch (e) {
       const msg = String(e);
       if (msg.includes('409') || msg.includes('Conflict')) {
@@ -141,7 +144,8 @@
       unlisten();
       if (!alreadyRunning) {
         scrapperRunning = false;
-        if (config.album_dir) await loadClasses(true);
+        scrapperMsg = '';
+        if (config.bdo_docs_dir) await loadClasses(true);
       }
     }
   }
@@ -156,22 +160,36 @@
     <div class="nav-brand">
       <svg class="nav-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="ni-gem" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id="ni-gem-top" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stop-color="#ffe566"/>
-            <stop offset="100%" stop-color="#b3861b"/>
+            <stop offset="100%" stop-color="#ffcc4d"/>
+          </linearGradient>
+          <linearGradient id="ni-gem-left" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#b3861b"/>
+            <stop offset="100%" stop-color="#ffcc4d"/>
+          </linearGradient>
+          <linearGradient id="ni-gem-right" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#ffdd6b"/>
+            <stop offset="100%" stop-color="#996600"/>
           </linearGradient>
         </defs>
-        <polygon points="256,60 340,185 300,185 256,160 212,185 172,185" fill="url(#ni-gem)" opacity="0.95"/>
-        <polygon points="172,185 212,185 192,290 152,420" fill="#b3861b" opacity="0.8"/>
-        <polygon points="340,185 360,420 320,290 300,185" fill="#ffcc4d" opacity="0.75"/>
-        <polygon points="212,185 300,185 256,430 " fill="#ffcc4d" opacity="0.6"/>
-        <polygon points="256,60 278,145 256,135 234,145" fill="white" opacity="0.25"/>
+        <rect width="512" height="512" rx="96" fill="#0a0c10"/>
+        <rect x="3" y="3" width="506" height="506" rx="94" fill="none" stroke="#ffcc4d" stroke-width="1.5" opacity="0.18"/>
+        <polygon points="256,78 340,198 300,198 256,168 212,198 172,198" fill="url(#ni-gem-top)" opacity="0.95"/>
+        <polygon points="172,198 212,198 192,298 152,418" fill="url(#ni-gem-left)" opacity="0.82"/>
+        <polygon points="340,198 360,418 320,298 300,198" fill="url(#ni-gem-right)" opacity="0.78"/>
+        <polygon points="212,198 300,198 280,318 256,434 232,318" fill="#ffcc4d" opacity="0.65"/>
+        <polygon points="152,418 192,298 232,318 256,434" fill="#b3861b" opacity="0.85"/>
+        <polygon points="360,418 256,434 280,318 320,298" fill="#cc9922" opacity="0.80"/>
+        <polygon points="256,78 282,155 256,145 230,155" fill="white" opacity="0.22"/>
+        <circle cx="364" cy="128" r="3.5" fill="#ffcc4d" opacity="0.45"/>
+        <circle cx="148" cy="142" r="5" fill="#ffcc4d" opacity="0.55"/>
       </svg>
       <span class="nav-title">Archive // Beauty Album</span>
     </div>
     <div class="global-stats">
-      {#if selectedClass && !loadingPresets && presets.length > 0}
-        TOTAL PRESETS: {presets.length}
+      {#if classes.length > 0}
+        TOTAL PRESETS: {classes.reduce((s, c) => s + c.preset_count, 0)}
       {/if}
     </div>
     <div class="nav-actions">

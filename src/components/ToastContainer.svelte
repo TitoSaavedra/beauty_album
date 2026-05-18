@@ -6,7 +6,7 @@
   {#each $toast as t (t.id)}
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
     <div class="toast toast-{t.type}" on:click={() => toast.dismiss(t.id)}>
-      <span class="toast-icon">{t.type === 'success' ? '✓' : '✕'}</span>
+      <span class="toast-bar"></span>
       <span class="toast-text">{t.text}</span>
     </div>
   {/each}
@@ -15,50 +15,56 @@
 <style>
   .toast-container {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    bottom: 28px;
+    right: 28px;
     z-index: 500;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     pointer-events: none;
+    align-items: flex-end;
   }
 
   .toast {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 18px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
+    align-items: stretch;
+    gap: 0;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: monospace;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     cursor: pointer;
     pointer-events: all;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-    animation: toast-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-    max-width: 320px;
+    background: #070a0e;
+    border: 1px solid #1a232c;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
+    animation: toast-in 0.2s ease-out;
+    max-width: 380px;
+    overflow: hidden;
   }
 
   @keyframes toast-in {
-    from { opacity: 0; transform: translateX(40px) scale(0.95); }
-    to   { opacity: 1; transform: translateX(0)    scale(1); }
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
-  .toast-success {
-    background: #0f1f14;
-    border: 1px solid #22c55e;
-    color: #86efac;
-  }
-
-  .toast-error {
-    background: #1f0f0f;
-    border: 1px solid #ef4444;
-    color: #fca5a5;
-  }
-
-  .toast-icon {
-    font-size: 14px;
+  .toast-bar {
+    width: 3px;
     flex-shrink: 0;
   }
+
+  .toast-text {
+    padding: 12px 16px;
+    line-height: 1.4;
+  }
+
+  .toast-success .toast-bar  { background: #b3861b; }
+  .toast-success .toast-text { color: #c9a020; }
+  .toast-success { border-color: rgba(179, 134, 27, 0.3); }
+
+  .toast-error .toast-bar  { background: #7f1d1d; }
+  .toast-error .toast-text { color: #f87171; }
+  .toast-error { border-color: rgba(239, 68, 68, 0.25); }
 </style>

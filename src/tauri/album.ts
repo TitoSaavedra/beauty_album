@@ -21,9 +21,7 @@ export interface PresetEntry {
 }
 
 export interface AppConfig {
-    album_dir: string;
-    bdo_output_dir: string;
-    album_input_dir: string;
+    bdo_docs_dir: string;
 }
 
 export const getClasses = (): Promise<ClassEntry[]> =>
@@ -38,13 +36,13 @@ export const getConfig = (): Promise<AppConfig> =>
 export const saveConfig = (config: AppConfig): Promise<void> =>
     invoke('save_config', { config });
 
-export const injectPreset = (downloadPath: string, outputDir: string): Promise<void> =>
-    invoke('inject_preset', { downloadPath, outputDir });
+export const injectPreset = (downloadPath: string): Promise<void> =>
+    invoke('inject_preset', { downloadPath });
 
 export const openFile = (path: string): Promise<void> =>
     invoke('open_file', { path });
 
-export const runScrapper = (): Promise<void> =>
+export const runScrapper = (): Promise<string> =>
     invoke('run_scrapper');
 
 export const stopScrapper = (): Promise<void> =>

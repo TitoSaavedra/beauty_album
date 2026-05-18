@@ -18,17 +18,18 @@ pub struct ScrapperProgress {
     pub preset_id: String,
     pub status: String,
     pub message: String,
+    pub class_name: String,
     pub current: usize,
     pub total: usize,
 }
 
 pub async fn run(
     app: &AppHandle,
-    album_dir: &Path,
+    logs_dir: &Path,
     cancel: Arc<AtomicBool>,
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     wait_for_server().await?;
-    write_log(album_dir, "[SYNC ] Scrapper started via FastAPI").await;
+    write_log(logs_dir, "[SYNC ] Scrapper started via FastAPI").await;
 
     let client = reqwest::Client::new();
 
@@ -40,43 +41,65 @@ pub async fn run(
         .error_for_status()
         .map_err(|e| AppError::Scrape(format!("POST /scrape error: {}", e)))?;
 
-    let response = client
+    let response = match client
         .get(format!("{}/events", SERVER))
         .send()
         .await
-        .map_err(|e| AppError::Scrape(format!("GET /events failed: {}", e)))?;
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = format!("GET /events failed: {}", e);
+            write_log(logs_dir, &format!("[ERR  ] {}", msg)).await;
+            return Err(AppError::Scrape(msg));
+        }
+    };
+
+    write_log(logs_dir, &format!("[SYNC ] SSE connected (status {})", response.status())).await;
 
     let mut stream = response.bytes_stream();
     use futures_util::StreamExt;
     let mut buf = String::new();
+    let mut done_msg = String::new();
+    let mut chunks_received: usize = 0;
 
     loop {
         tokio::select! {
             chunk = stream.next() => {
                 match chunk {
                     Some(Ok(bytes)) => {
+                        chunks_received += 1;
+                        write_log(logs_dir, &format!("[SYNC ] SSE chunk #{}: {} bytes", chunks_received, bytes.len())).await;
                         buf.push_str(&String::from_utf8_lossy(&bytes));
-                        drain_events(&mut buf, app);
+                        if let Some(msg) = drain_events(&mut buf, app, logs_dir) {
+                            done_msg = msg;
+                        }
                     }
-                    Some(Err(e)) => return Err(AppError::Scrape(format!("SSE read error: {}", e))),
-                    None => break,
+                    Some(Err(e)) => {
+                        write_log(logs_dir, &format!("[ERR  ] SSE read error: {}", e)).await;
+                        return Err(AppError::Scrape(format!("SSE read error: {}", e)));
+                    }
+                    None => {
+                        write_log(logs_dir, "[SYNC ] SSE stream closed").await;
+                        break;
+                    }
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(100)) => {
                 if cancel.load(Ordering::Relaxed) {
                     client.post(format!("{}/stop", SERVER)).send().await.ok();
-                    write_log(album_dir, "[USER ] Scrapper cancelled by user").await;
+                    write_log(logs_dir, "[USER ] Scrapper cancelled by user").await;
                     break;
                 }
             }
         }
     }
 
-    write_log(album_dir, "[SYNC ] Scrapper finished").await;
-    Ok(())
+    write_log(logs_dir, &format!("[SYNC ] Scrapper finished — done_msg={:?}", done_msg)).await;
+    Ok(done_msg)
 }
 
-fn drain_events(buf: &mut String, app: &AppHandle) {
+fn drain_events(buf: &mut String, app: &AppHandle, logs_dir: &Path) -> Option<String> {
+    let mut done_msg = None;
     loop {
         let Some(nl) = buf.find('\n') else { break };
         let line = buf[..nl].trim().to_string();
@@ -86,42 +109,49 @@ fn drain_events(buf: &mut String, app: &AppHandle) {
         if data.is_empty() {
             continue;
         }
-        let Ok(val) = serde_json::from_str::<Value>(data) else { continue };
+        let Ok(val) = serde_json::from_str::<Value>(data) else {
+            write_log_sync(logs_dir, &format!("[WARN ] SSE parse failed: {}", &data[..data.len().min(120)]));
+            continue;
+        };
         let msg_type = val["type"].as_str().unwrap_or("");
 
         if msg_type == "progress" {
+            let status = val["status"].as_str().unwrap_or("");
+            let preset_id = val["preset_id"].as_str().unwrap_or("");
+            let class_name = val["class_hint"].as_str().unwrap_or("").to_string();
+            write_log_sync(logs_dir, &format!("[SYNC ] Emitting event: status={} preset_id={} class={}", status, preset_id, class_name));
             let _ = app.emit("scrapper_progress", ScrapperProgress {
-                preset_id: val["preset_id"].as_str().unwrap_or("").to_string(),
-                status:    val["status"].as_str().unwrap_or("").to_string(),
+                preset_id: preset_id.to_string(),
+                status:    status.to_string(),
                 message:   val["message"].as_str().unwrap_or("").to_string(),
+                class_name,
                 current:   val["current"].as_u64().unwrap_or(0) as usize,
                 total:     val["total"].as_u64().unwrap_or(0) as usize,
             });
         } else if msg_type == "done" {
-            let _ = app.emit("scrapper_progress", ScrapperProgress {
-                preset_id: String::new(),
-                status:    "done".into(),
-                message:   format!(
-                    "Finished — {} done  {} skipped  {} error(s)",
-                    val["n_done"].as_u64().unwrap_or(0),
-                    val["n_skip"].as_u64().unwrap_or(0),
-                    val["n_error"].as_u64().unwrap_or(0),
-                ),
-                current: 0,
-                total:   0,
-            });
+            let msg = format!(
+                "Finished — {} done  {} skipped  {} error(s)",
+                val["n_done"].as_u64().unwrap_or(0),
+                val["n_skip"].as_u64().unwrap_or(0),
+                val["n_error"].as_u64().unwrap_or(0),
+            );
+            write_log_sync(logs_dir, &format!("[SYNC ] SSE done event: {}", msg));
+            done_msg = Some(msg);
+        } else {
+            write_log_sync(logs_dir, &format!("[SYNC ] SSE unknown type: {}", msg_type));
         }
     }
+    done_msg
 }
 
 pub async fn watch_input_dir(
     app: AppHandle,
     input_dir: std::path::PathBuf,
-    album_dir: std::path::PathBuf,
+    logs_dir: std::path::PathBuf,
 ) {
     let mut known = collect_input_files(&input_dir);
     write_log(
-        &album_dir,
+        &logs_dir,
         &format!("[WATCH] Watching input dir: {} ({} known file(s))", input_dir.display(), known.len()),
     ).await;
 
@@ -135,11 +165,11 @@ pub async fn watch_input_dir(
         known = current;
         if !new_files.is_empty() {
             write_log(
-                &album_dir,
+                &logs_dir,
                 &format!("[WATCH] New file(s) detected: {} — notifying frontend", new_files.join(", ")),
             ).await;
             let _ = app.emit("folder_changed", new_files);
-            write_log(&album_dir, "[WATCH] Cooldown 60s before next watch poll").await;
+            write_log(&logs_dir, "[WATCH] Cooldown 60s before next watch poll").await;
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     }
@@ -193,9 +223,9 @@ async fn wait_for_server() -> Result<(), AppError> {
     }
 }
 
-pub async fn write_log(album_dir: &Path, msg: &str) {
+pub async fn write_log(logs_dir: &Path, msg: &str) {
     use tokio::io::AsyncWriteExt;
-    let path = album_dir.join("tauri.log");
+    let path = logs_dir.join("tauri.log");
     if let Ok(mut f) = tokio::fs::OpenOptions::new().create(true).append(true).open(&path).await {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let line = format!("[{}] {}\n", ts, msg);
@@ -203,9 +233,9 @@ pub async fn write_log(album_dir: &Path, msg: &str) {
     }
 }
 
-pub fn write_log_sync(album_dir: &Path, msg: &str) {
+pub fn write_log_sync(logs_dir: &Path, msg: &str) {
     use std::io::Write;
-    let path = album_dir.join("tauri.log");
+    let path = logs_dir.join("tauri.log");
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let _ = writeln!(f, "[{}] {}", ts, msg);
