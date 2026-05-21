@@ -11,6 +11,7 @@
   import ToastContainer from './components/ToastContainer.svelte';
   import { appConfig } from './stores/appConfig';
   import { toast } from './stores/toast';
+  import { presetDetail } from './stores/presetDetail';
 
   interface ScrapperProgress {
     preset_id: string;
@@ -89,11 +90,19 @@
   }
 
   async function loadClasses(keepSelected = false) {
-    loadingClasses = true;
+    if (!keepSelected) loadingClasses = true;
     classesError = '';
     try {
       const prev = selectedClass;
-      classes = await api.getClasses(useTestDir);
+      const fresh = await api.getClasses(useTestDir);
+      if (!keepSelected || classes.length === 0) {
+        classes = fresh;
+      } else {
+        const freshMap = new Map(fresh.map(c => [c.name, c]));
+        classes = classes.map(c => freshMap.get(c.name) ?? c);
+        const newOnes = fresh.filter(c => !classes.some(e => e.name === c.name));
+        if (newOnes.length > 0) classes = [...classes, ...newOnes];
+      }
       const target = keepSelected && prev && classes.some(c => c.name === prev)
         ? prev
         : classes[0]?.name;
@@ -140,8 +149,19 @@
       if (payload.status === 'metadata' || payload.status === 'done') {
         if (config.bdo_docs_dir) loadClasses(true);
         if (payload.status === 'done') {
-          toast.show(`${payload.class_name} #${payload.preset_id} downloaded`, 'success', 3000);
+          const pid = payload.preset_id;
+          const cls = payload.class_name;
+          toast.show(`${cls} #${pid} downloaded`, 'success', 5000, async () => {
+            const list = await api.getPresets(cls, useTestDir);
+            const found = list.find(p => p.preset_id === pid);
+            if (found) presetDetail.set(found);
+          });
         }
+      } else if (payload.status === 'phase2_start') {
+        scrapperRunning = false;
+        scrapperMsg = '';
+        scrapperTotal = 0;
+        scrapperCurrent = 0;
       } else if (payload.status === 'error') {
         scrapperError = payload.message;
       } else if (payload.status === 'cancelled') {
@@ -226,9 +246,9 @@
         <button class="btn-stop" on:click={stopScraper} title="Stop">Stop</button>
       {:else}
         <button class="btn-sync" style={useTestDir ? '' : 'display:none'} on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
-        <button class="btn-dir-toggle" class:active={useTestDir} on:click={toggleDir} title="Toggle between Presets and Test directories">
-          {useTestDir ? 'Test' : 'Presets'}
-        </button>
+        {#if useTestDir}
+          <button class="btn-dir-toggle" class:active={useTestDir} on:click={toggleDir} title="Toggle between Presets and Test directories">Test</button>
+        {/if}
       {/if}
       <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
     </div>

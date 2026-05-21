@@ -28,7 +28,7 @@
   </div>
 {:else}
   <div class="grid">
-    {#each presets as preset, i (preset.preset_id ?? preset.image_paths?.[0] ?? Math.random())}
+    {#each presets as preset, i (preset.preset_id ?? i)}
       <div in:fly={{ y: 28, duration: 350, delay: Math.min(i * 30, 600), easing: cubicOut }}>
         <PresetCard {preset} />
       </div>

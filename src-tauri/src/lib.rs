@@ -29,6 +29,17 @@ pub fn run() {
                 let (input_dir, logs_dir) = {
                     let state = app.state::<AppState>();
                     let config = state.0.lock().unwrap();
+                    let dirs = vec![
+                        config.presets_dir(),
+                        config.test_dir(),
+                        config.classes_dir(),
+                        config.to_download_dir(),
+                        config.logs_dir(),
+                        config.customization_dir(),
+                    ];
+                    for dir in dirs {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
                     (config.to_download_dir(), config.logs_dir())
                 };
 

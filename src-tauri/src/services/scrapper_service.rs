@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -141,7 +141,7 @@ pub async fn run(
         val
     };
 
-    let client = GarmothClient::new(&cf_clearance);
+    let client = Arc::new(GarmothClient::new(&cf_clearance));
 
     write_log(logs_dir, &format!("{} Starting browser session", prefix)).await;
     let browser = match playwright_service::BrowserSession::new().await {
@@ -152,132 +152,181 @@ pub async fn run(
         }
     };
 
-    let mut fetched: Vec<FetchedMeta> = Vec::new();
-    let mut n_done = 0usize;
-    let mut n_err = 0usize;
+    // All JSON fetches run concurrently; each sends its result into this channel
+    // so the image downloader below processes them one-at-a-time as they arrive.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<FetchedMeta>(total);
+    let fetch_errors = Arc::new(AtomicUsize::new(0));
+    let n_meta = Arc::new(AtomicUsize::new(0));
 
     for (i, preset) in pending.into_iter().enumerate() {
-        if cancel.load(Ordering::Relaxed) {
-            write_log(logs_dir, "[USER ] Sync cancelled").await;
-            events::emit_progress(app, ScrapperProgress {
+        let client = Arc::clone(&client);
+        let tx = tx.clone();
+        let app_h = app.clone();
+        let logs = logs_dir.to_path_buf();
+        let p_dir = presets_dir.to_path_buf();
+        let cancel = Arc::clone(&cancel);
+        let fetch_errors = Arc::clone(&fetch_errors);
+        let n_meta = Arc::clone(&n_meta);
+
+        tokio::spawn(async move {
+            if cancel.load(Ordering::Relaxed) {
+                events::emit_progress(&app_h, ScrapperProgress {
+                    preset_id: preset.preset_id.to_string(),
+                    status: "cancelled".to_string(),
+                    message: "Cancelled by user".to_string(),
+                    class_name: preset.class_hint.clone(),
+                    current: i + 1,
+                    total,
+                });
+                return;
+            }
+
+            events::emit_progress(&app_h, ScrapperProgress {
                 preset_id: preset.preset_id.to_string(),
-                status: "cancelled".to_string(),
-                message: "Cancelled by user".to_string(),
+                status: "processing".to_string(),
+                message: format!("Fetching {}", preset.preset_id),
                 class_name: preset.class_hint.clone(),
                 current: i + 1,
                 total,
             });
+
+            let (data, raw) = match client.fetch_preset(preset.preset_id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    fetch_errors.fetch_add(1, Ordering::Relaxed);
+                    write_log(&logs, &format!("[ERR  ] Meta {} failed: {}", preset.preset_id, e)).await;
+                    return;
+                }
+            };
+
+            let preset_dir = p_dir.join(&preset.class_hint).join(preset.preset_id.to_string());
+            let _ = tokio::fs::create_dir_all(&preset_dir).await;
+
+            let pab_filename = preset.pab_path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let _ = tokio::fs::copy(&preset.pab_path, preset_dir.join(&pab_filename)).await;
+
+            let mut image_1 = data.image_1.as_deref().filter(|s| !s.is_empty()).map(String::from);
+            let mut image_2 = data.image_2.as_deref().filter(|s| !s.is_empty()).map(String::from);
+            if image_1.is_none() && image_2.is_some() {
+                image_1 = image_2.take();
+            }
+
+            let skeleton = build_metadata_json(&data, &raw, &[], &pab_filename);
+            let _ = tokio::fs::write(
+                preset_dir.join(format!("{}.json", preset.preset_id)),
+                serde_json::to_string_pretty(&skeleton).unwrap_or_default(),
+            ).await;
+
+            let current = n_meta.fetch_add(1, Ordering::Relaxed) + 1;
+            write_log(&logs, &format!("[META ] Preset {}", preset.preset_id)).await;
+            events::emit_progress(&app_h, ScrapperProgress {
+                preset_id: preset.preset_id.to_string(),
+                status: "metadata".to_string(),
+                message: format!("Ready: {}", preset.preset_id),
+                class_name: preset.class_hint.clone(),
+                current,
+                total,
+            });
+
+            let _ = tx.send(FetchedMeta { preset, data, raw, preset_dir, pab_filename, image_1, image_2 }).await;
+        });
+    }
+    drop(tx); // channel closes once every spawned task drops its clone
+
+    // Sequential image downloader — one image_1 at a time, in arrival order
+    let mut n_done = 0usize;
+    let mut n_img_err = 0usize;
+    let mut fetched: Vec<FetchedMeta> = Vec::new();
+    let mut img_current = 0usize;
+
+    while let Some(meta) = rx.recv().await {
+        img_current += 1;
+
+        if cancel.load(Ordering::Relaxed) {
+            write_log(logs_dir, "[USER ] Sync cancelled").await;
+            events::emit_progress(app, ScrapperProgress {
+                preset_id: meta.preset.preset_id.to_string(),
+                status: "cancelled".to_string(),
+                message: "Cancelled by user".to_string(),
+                class_name: meta.preset.class_hint.clone(),
+                current: img_current,
+                total,
+            });
+            fetched.push(meta);
+            while rx.recv().await.is_some() {} // drain remaining
             break;
         }
 
-        events::emit_progress(app, ScrapperProgress {
-            preset_id: preset.preset_id.to_string(),
-            status: "processing".to_string(),
-            message: format!("Fetching {}", preset.preset_id),
-            class_name: preset.class_hint.clone(),
-            current: i + 1,
-            total,
-        });
-
-        let (data, raw) = match client.fetch_preset(preset.preset_id).await {
-            Ok(d) => d,
-            Err(e) => {
-                n_err += 1;
-                write_log(logs_dir, &format!("[ERR  ] Meta {} failed: {}", preset.preset_id, e)).await;
-                continue;
-            }
-        };
-
-        let preset_dir = presets_dir
-            .join(&preset.class_hint)
-            .join(preset.preset_id.to_string());
-        let _ = tokio::fs::create_dir_all(&preset_dir).await;
-
-        let pab_filename = preset
-            .pab_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let _ = tokio::fs::copy(&preset.pab_path, preset_dir.join(&pab_filename)).await;
-
-        let image_1 = data.image_1.as_deref().filter(|s| !s.is_empty()).map(String::from);
-        let image_2 = data.image_2.as_deref().filter(|s| !s.is_empty()).map(String::from);
-
-        let skeleton = build_metadata_json(&data, &raw, &[], &pab_filename);
-        let _ = tokio::fs::write(
-            preset_dir.join(format!("{}.json", preset.preset_id)),
-            serde_json::to_string_pretty(&skeleton).unwrap_or_default(),
-        ).await;
-
-        write_log(logs_dir, &format!("[META ] Preset {}", preset.preset_id)).await;
-        events::emit_progress(app, ScrapperProgress {
-            preset_id: preset.preset_id.to_string(),
-            status: "metadata".to_string(),
-            message: format!("Ready: {}", preset.preset_id),
-            class_name: preset.class_hint.clone(),
-            current: i + 1,
-            total,
-        });
-
-        if let Some(ref img1) = image_1 {
+        if let Some(ref img1) = meta.image_1 {
             let url = format!(
                 "https://assets.garmoth.com/beauty-album/images/{}/{}",
-                data.class, img1
+                meta.data.class, img1
             );
             events::emit_progress(app, ScrapperProgress {
-                preset_id: preset.preset_id.to_string(),
+                preset_id: meta.preset.preset_id.to_string(),
                 status: "processing".to_string(),
-                message: format!("Downloading {}", preset.preset_id),
-                class_name: preset.class_hint.clone(),
-                current: i + 1,
+                message: format!("Downloading {}", meta.preset.preset_id),
+                class_name: meta.preset.class_hint.clone(),
+                current: img_current,
                 total,
             });
             match browser.download(&url).await {
                 Ok(bytes) => {
-                    let _ = tokio::fs::write(preset_dir.join(img1), &bytes).await;
-                    let updated = build_metadata_json(&data, &raw, &[img1.clone()], &pab_filename);
+                    let _ = tokio::fs::write(meta.preset_dir.join(img1), &bytes).await;
+                    let updated = build_metadata_json(&meta.data, &meta.raw, &[img1.clone()], &meta.pab_filename);
                     let _ = tokio::fs::write(
-                        preset_dir.join(format!("{}.json", preset.preset_id)),
+                        meta.preset_dir.join(format!("{}.json", meta.preset.preset_id)),
                         serde_json::to_string_pretty(&updated).unwrap_or_default(),
                     ).await;
-                    let _ = tokio::fs::write(preset_dir.join(".ok"), b"").await;
+                    let _ = tokio::fs::write(meta.preset_dir.join(".ok"), b"").await;
                     n_done += 1;
-                    write_log(logs_dir, &format!("{} Done: preset {}", prefix, preset.preset_id)).await;
+                    write_log(logs_dir, &format!("{} Done: preset {}", prefix, meta.preset.preset_id)).await;
                     events::emit_progress(app, ScrapperProgress {
-                        preset_id: preset.preset_id.to_string(),
+                        preset_id: meta.preset.preset_id.to_string(),
                         status: "done".to_string(),
-                        message: format!("Synced preset {}", preset.preset_id),
-                        class_name: preset.class_hint.clone(),
-                        current: i + 1,
+                        message: format!("Synced preset {}", meta.preset.preset_id),
+                        class_name: meta.preset.class_hint.clone(),
+                        current: img_current,
                         total,
                     });
                 }
                 Err(e) => {
-                    n_err += 1;
-                    write_log(logs_dir, &format!("[ERR  ] image_1 {} failed: {}", preset.preset_id, e)).await;
+                    n_img_err += 1;
+                    write_log(logs_dir, &format!("[ERR  ] image_1 {} failed: {}", meta.preset.preset_id, e)).await;
                 }
             }
         } else {
-                let _ = tokio::fs::write(preset_dir.join(".ok"), b"").await;
+            let _ = tokio::fs::write(meta.preset_dir.join(".ok"), b"").await;
             n_done += 1;
-            write_log(logs_dir, &format!("{} Done (no images): preset {}", prefix, preset.preset_id)).await;
+            write_log(logs_dir, &format!("{} Done (no images): preset {}", prefix, meta.preset.preset_id)).await;
             events::emit_progress(app, ScrapperProgress {
-                preset_id: preset.preset_id.to_string(),
+                preset_id: meta.preset.preset_id.to_string(),
                 status: "done".to_string(),
-                message: format!("Synced preset {}", preset.preset_id),
-                class_name: preset.class_hint.clone(),
-                current: i + 1,
+                message: format!("Synced preset {}", meta.preset.preset_id),
+                class_name: meta.preset.class_hint.clone(),
+                current: img_current,
                 total,
             });
         }
 
-        fetched.push(FetchedMeta { preset, data, raw, preset_dir, pab_filename, image_1, image_2 });
+        fetched.push(meta);
         jitter_sleep().await;
     }
 
     events::emit_refresh_album(app);
 
-    // image_2 pass
+    events::emit_progress(app, ScrapperProgress {
+        preset_id: String::new(),
+        status: "phase2_start".to_string(),
+        message: String::new(),
+        class_name: String::new(),
+        current: 0,
+        total: 0,
+    });
+
+    // image_2 pass — silent best-effort after all image_1s are done
     let img2_list: Vec<&FetchedMeta> = fetched.iter()
         .filter(|m| m.image_2.is_some() && ok_exists(presets_dir, m.preset.preset_id))
         .collect();
@@ -313,6 +362,7 @@ pub async fn run(
         }
     }
 
+    let n_err = fetch_errors.load(Ordering::Relaxed) + n_img_err;
     let msg = format!("Finished — {} done  {} error(s)", n_done, n_err);
     write_log(logs_dir, &format!("{} {}", prefix, msg)).await;
     Ok(msg)

@@ -7,50 +7,35 @@ use playwright_rs::{
 
 use crate::errors::AppError;
 
-// On Windows release builds, hide any new console windows that playwright's
-// Node.js driver creates (they appear because the driver is a console-subsystem
-// process and the parent Tauri app is a GUI-subsystem app with no console).
+// On Windows release builds, allocate a hidden console before launching Playwright.
+// node.exe (the Playwright driver) is a console-subsystem process; when spawned by a
+// GUI-subsystem parent it would normally create a new visible console window. By giving
+// our process its own console first (and immediately hiding it), node.exe inherits that
+// console instead of opening a new one — works with both ConHost and Windows Terminal.
 #[cfg(all(target_os = "windows", not(debug_assertions)))]
-mod console_hider {
+mod hidden_console {
+    use std::sync::OnceLock;
+    static DONE: OnceLock<()> = OnceLock::new();
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn AllocConsole() -> i32;
+        fn GetConsoleWindow() -> isize;
+    }
     #[link(name = "user32")]
     extern "system" {
-        fn EnumWindows(lpEnumFunc: unsafe extern "system" fn(isize, isize) -> i32, lParam: isize) -> i32;
-        fn GetClassNameW(hwnd: isize, lpClassName: *mut u16, nMaxCount: i32) -> i32;
-        fn IsWindowVisible(hwnd: isize) -> i32;
         fn ShowWindow(hwnd: isize, nCmdShow: i32) -> i32;
     }
 
-    unsafe extern "system" fn collect_cb(hwnd: isize, lparam: isize) -> i32 {
-        if IsWindowVisible(hwnd) == 0 { return 1; }
-        let mut class = [0u16; 64];
-        let len = GetClassNameW(hwnd, class.as_mut_ptr(), 64) as usize;
-        // "ConsoleWindowClass" — 18 UTF-16 code units
-        if len == 18 {
-            const TARGET: [u16; 18] = [
-                0x43, 0x6F, 0x6E, 0x73, 0x6F, 0x6C, 0x65, 0x57,
-                0x69, 0x6E, 0x64, 0x6F, 0x77, 0x43, 0x6C, 0x61, 0x73, 0x73,
-            ];
-            if class[..18] == TARGET {
-                let vec = &mut *(lparam as *mut Vec<isize>);
-                vec.push(hwnd);
+    pub fn ensure_hidden() {
+        DONE.get_or_init(|| unsafe {
+            if AllocConsole() != 0 {
+                let hwnd = GetConsoleWindow();
+                if hwnd != 0 {
+                    ShowWindow(hwnd, 0); // SW_HIDE
+                }
             }
-        }
-        1
-    }
-
-    pub fn snapshot() -> Vec<isize> {
-        let mut hwnds: Vec<isize> = Vec::new();
-        unsafe { EnumWindows(collect_cb, &mut hwnds as *mut _ as isize); }
-        hwnds
-    }
-
-    pub fn hide_new(before: &[isize]) {
-        let after = snapshot();
-        for hwnd in after {
-            if !before.contains(&hwnd) {
-                unsafe { ShowWindow(hwnd, 0); } // SW_HIDE
-            }
-        }
+        });
     }
 }
 
@@ -63,15 +48,7 @@ pub struct BrowserSession {
 impl BrowserSession {
     pub async fn new() -> Result<Self, AppError> {
         #[cfg(all(target_os = "windows", not(debug_assertions)))]
-        let hide_task = {
-            let before = console_hider::snapshot();
-            tokio::task::spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(150)).await;
-                    console_hider::hide_new(&before);
-                }
-            })
-        };
+        hidden_console::ensure_hidden();
 
         install_browsers(Some(&["chromium"]))
             .await
@@ -80,9 +57,6 @@ impl BrowserSession {
         let playwright = Playwright::launch()
             .await
             .map_err(|e| AppError::Scrape(format!("playwright: {:?}", e)))?;
-
-        #[cfg(all(target_os = "windows", not(debug_assertions)))]
-        hide_task.abort();
 
         let browser = playwright
             .chromium()
