@@ -21,7 +21,8 @@
     total: number;
   }
 
-  let config: AppConfig = { bdo_docs_dir: '' };
+  let config: AppConfig = { bdo_docs_dir: '', cf_clearance: '' };
+  let useTestDir = false;
   let scrapperRunning = false;
   let scrapperCurrent = 0;
   let scrapperTotal = 0;
@@ -62,7 +63,7 @@
     presetsError = '';
     loadingPresets = true;
     try {
-      presets = await api.getPresets(name);
+      presets = await api.getPresets(name, useTestDir);
     } catch (err) {
       presetsError = String(err);
     } finally {
@@ -75,14 +76,14 @@
     classesError = '';
     try {
       const prev = selectedClass;
-      classes = await api.getClasses();
+      classes = await api.getClasses(useTestDir);
       const target = keepSelected && prev && classes.some(c => c.name === prev)
         ? prev
         : classes[0]?.name;
       if (!target) return;
       if (keepSelected && target === prev) {
         // Refresh in-place: Svelte only animates truly new preset_ids
-        try { presets = await api.getPresets(target); } catch (err) { presetsError = String(err); }
+        try { presets = await api.getPresets(target, useTestDir); } catch (err) { presetsError = String(err); }
       } else {
         await selectClass(target);
       }
@@ -130,7 +131,7 @@
 
     let alreadyRunning = false;
     try {
-      const doneMsg = await api.runScrapper();
+      const doneMsg = await api.runScrapper(useTestDir);
       if (doneMsg) toast.show(doneMsg, 'success', 6000);
     } catch (e) {
       const msg = String(e);
@@ -153,6 +154,14 @@
   async function stopScraper() {
     await api.stopScrapper();
   }
+
+  async function toggleDir() {
+    useTestDir = !useTestDir;
+    selectedClass = null;
+    presets = [];
+    if (config.bdo_docs_dir) await loadClasses();
+  }
+
 </script>
 
 <div class="app">
@@ -194,9 +203,12 @@
     </div>
     <div class="nav-actions">
       {#if scrapperRunning}
-        <button class="btn-stop" on:click={stopScraper} title="Stop scrapping">Stop</button>
+        <button class="btn-stop" on:click={stopScraper} title="Stop">Stop</button>
       {:else}
-        <button class="btn-sync" style="display:none" on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
+        <button class="btn-sync" style={useTestDir ? '' : 'display:none'} on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
+        <button class="btn-dir-toggle" class:active={useTestDir} on:click={toggleDir} title="Toggle between Presets and Test directories">
+          {useTestDir ? 'Test' : 'Presets'}
+        </button>
       {/if}
       <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
     </div>
@@ -389,6 +401,33 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .btn-dir-toggle {
+    padding: 0 12px;
+    height: 34px;
+    background: transparent;
+    border: 1px solid #1a232c;
+    border-radius: 5px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    min-width: 64px;
+  }
+
+  .btn-dir-toggle:hover {
+    border-color: #64748b;
+    color: #94a3b8;
+  }
+
+  .btn-dir-toggle.active {
+    border-color: rgba(99, 102, 241, 0.55);
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.08);
   }
 
   .btn-settings {

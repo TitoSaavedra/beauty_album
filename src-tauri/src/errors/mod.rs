@@ -6,6 +6,7 @@ pub enum AppError {
     Io(String),
     Parse(String),
     Scrape(String),
+    CfBlocked,
 }
 
 impl std::fmt::Display for AppError {
@@ -15,6 +16,7 @@ impl std::fmt::Display for AppError {
             AppError::Io(msg) => write!(f, "IO error: {}", msg),
             AppError::Parse(msg) => write!(f, "Parse error: {}", msg),
             AppError::Scrape(msg) => write!(f, "Scrape error: {}", msg),
+            AppError::CfBlocked => write!(f, "Cloudflare blocked request (403)"),
         }
     }
 }

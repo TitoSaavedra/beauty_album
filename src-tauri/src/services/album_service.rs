@@ -3,10 +3,6 @@ use std::path::Path;
 
 use crate::errors::AppError;
 
-fn numeric_prefix(s: &str) -> Option<u64> {
-    let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() { None } else { digits.parse().ok() }
-}
 
 pub fn get_classes(base_dir: &Path) -> Result<Vec<serde_json::Value>, AppError> {
     if !base_dir.exists() {

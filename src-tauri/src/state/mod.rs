@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Child;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct AppConfig {
     pub bdo_docs_dir: String,
+    #[serde(default)]
+    pub cf_clearance: String,
 }
 
 impl AppConfig {
@@ -25,6 +26,10 @@ impl AppConfig {
     pub fn logs_dir(&self) -> PathBuf {
         PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Logs")
     }
+
+    pub fn test_dir(&self) -> PathBuf {
+        PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Test")
+    }
 }
 
 pub struct AppState(pub Mutex<AppConfig>);
@@ -36,5 +41,3 @@ impl Default for ScrapperCancelToken {
         Self(Arc::new(AtomicBool::new(false)))
     }
 }
-
-pub struct PythonProcess(pub Mutex<Option<Child>>);

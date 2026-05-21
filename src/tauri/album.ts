@@ -22,13 +22,14 @@ export interface PresetEntry {
 
 export interface AppConfig {
     bdo_docs_dir: string;
+    cf_clearance: string;
 }
 
-export const getClasses = (): Promise<ClassEntry[]> =>
-    invoke('get_classes');
+export const getClasses = (useTest = false): Promise<ClassEntry[]> =>
+    invoke('get_classes', { useTest });
 
-export const getPresets = (className: string): Promise<PresetEntry[]> =>
-    invoke('get_presets', { className });
+export const getPresets = (className: string, useTest = false): Promise<PresetEntry[]> =>
+    invoke('get_presets', { className, useTest });
 
 export const getConfig = (): Promise<AppConfig> =>
     invoke('get_config');
@@ -42,8 +43,8 @@ export const injectPreset = (downloadPath: string): Promise<void> =>
 export const openFile = (path: string): Promise<void> =>
     invoke('open_file', { path });
 
-export const runScrapper = (): Promise<string> =>
-    invoke('run_scrapper');
+export const runScrapper = (devMode = false): Promise<string> =>
+    invoke('run_scrapper', { devMode });
 
 export const stopScrapper = (): Promise<void> =>
     invoke('stop_scrapper');
@@ -53,3 +54,4 @@ export const checkPending = (): Promise<number> =>
 
 export const openLogs = (): Promise<void> =>
     invoke('open_logs');
+
