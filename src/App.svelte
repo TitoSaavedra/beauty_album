@@ -36,8 +36,24 @@
   let loadingPresets = false;
   let classesError = '';
   let presetsError = '';
+  let classInitVisible = false;
+  let classInitCurrent = 0;
+  let classInitTotal = 0;
+  let classInitName = '';
 
   onMount(async () => {
+    listen('refresh_album', () => {
+      if (config.bdo_docs_dir) loadClasses(true);
+    });
+
+    listen<{ current: number; total: number; class_name: string }>('class_init_progress', ({ payload }) => {
+      classInitVisible = true;
+      classInitCurrent = payload.current;
+      classInitTotal = payload.total;
+      classInitName = payload.class_name;
+      toast.show(`Class ready: ${payload.class_name}`, 'success', 2000);
+    });
+
     listen<string[]>('folder_changed', ({ payload: files }) => {
       const label = files.length === 1 ? files[0] : `${files.length} new presets`;
       toast.show(`New preset found: ${label}`, 'success', 4000);
@@ -48,6 +64,7 @@
       config = await api.getConfig();
       appConfig.set(config);
       if (config.bdo_docs_dir) {
+        try { await api.initClasses(); } finally { classInitVisible = false; }
         await loadClasses();
         const pending = await api.checkPending();
         if (pending > 0) startScraper();
@@ -120,8 +137,11 @@
       if (payload.current > 0) scrapperCurrent = payload.current;
       if (payload.message) scrapperMsg = payload.message;
 
-      if (payload.status === 'done') {
+      if (payload.status === 'metadata' || payload.status === 'done') {
         if (config.bdo_docs_dir) loadClasses(true);
+        if (payload.status === 'done') {
+          toast.show(`${payload.class_name} #${payload.preset_id} downloaded`, 'success', 3000);
+        }
       } else if (payload.status === 'error') {
         scrapperError = payload.message;
       } else if (payload.status === 'cancelled') {
@@ -202,7 +222,7 @@
       {/if}
     </div>
     <div class="nav-actions">
-      {#if scrapperRunning}
+      {#if scrapperRunning && useTestDir}
         <button class="btn-stop" on:click={stopScraper} title="Stop">Stop</button>
       {:else}
         <button class="btn-sync" style={useTestDir ? '' : 'display:none'} on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
@@ -214,40 +234,48 @@
     </div>
   </nav>
 
-  {#if scrapperRunning || scrapperMsg}
+  {#if scrapperRunning || scrapperMsg || classInitVisible}
     <div class="scrapper-strip" class:has-error={!!scrapperError}>
       <div
         class="scrapper-fill"
-        style="width: {scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0}%"
+        style="width: {classInitVisible
+          ? (classInitTotal > 0 ? Math.round((classInitCurrent / classInitTotal) * 100) : 0)
+          : (scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0)}%"
       ></div>
       <span class="scrapper-label">
-        {#if scrapperTotal > 0}
-          {scrapperCurrent}/{scrapperTotal} —
+        {#if classInitVisible}
+          {classInitCurrent}/{classInitTotal} — {classInitName}
+        {:else}
+          {#if scrapperTotal > 0}{scrapperCurrent}/{scrapperTotal} —{/if}
+          {scrapperMsg}
         {/if}
-        {scrapperMsg}
       </span>
     </div>
   {/if}
 
   <div class="main-layout">
-    <aside class="sidebar">
-      <ClassList
-        {classes}
-        {selectedClass}
-        loading={loadingClasses}
-        error={classesError}
-        on:select={handleSelectClass}
-      />
-    </aside>
+    {#if classInitVisible}
+      <div class="main-layout-skeleton"></div>
+    {:else}
+      <aside class="sidebar">
+        <ClassList
+          {classes}
+          {selectedClass}
+          loading={loadingClasses}
+          error={classesError}
+          on:select={handleSelectClass}
+        />
+      </aside>
 
-    <main class="content custom-scroll">
-      <PresetGrid
-        {presets}
-        {selectedClass}
-        loading={loadingPresets}
-        error={presetsError}
-      />
-    </main>
+      <main class="content custom-scroll">
+        <PresetGrid
+          {presets}
+          {selectedClass}
+          loading={loadingPresets}
+          error={presetsError}
+        />
+      </main>
+    {/if}
   </div>
 </div>
 
@@ -473,5 +501,17 @@
     position: relative;
     background-image: radial-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 0);
     background-size: 24px 24px;
+  }
+
+  .main-layout-skeleton {
+    flex: 1;
+    background: linear-gradient(90deg, #070a0e 25%, #0f141a 50%, #070a0e 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 </style>

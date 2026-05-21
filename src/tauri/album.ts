@@ -55,3 +55,6 @@ export const checkPending = (): Promise<number> =>
 export const openLogs = (): Promise<void> =>
     invoke('open_logs');
 
+export const initClasses = (): Promise<void> =>
+    invoke('init_classes');
+

@@ -1,13 +1,13 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
-use crate::services::{album_service, scrapper_service};
+use crate::services::{album_service, class_service, playwright_service, scrapper_service};
 use crate::state::AppState;
 
 #[tauri::command]
 pub fn get_classes(use_test: bool, state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
     let config = state.0.lock().map_err(|e| e.to_string())?;
     let dir = if use_test { config.test_dir() } else { config.presets_dir() };
-    album_service::get_classes(&dir).map_err(|e| e.to_string())
+    album_service::get_classes(&dir, &config.classes_dir()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -68,10 +68,14 @@ pub fn open_file(path: String) -> Result<(), String> {
     }
 
     #[cfg(target_os = "windows")]
-    std::process::Command::new("cmd")
-        .args(["/c", "start", "", &path])
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .args(["/c", "start", "", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
 
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")
@@ -86,6 +90,28 @@ pub fn open_file(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn init_classes(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let (classes_dir, logs_dir) = {
+        let config = state.0.lock().map_err(|e| e.to_string())?;
+        (config.classes_dir(), config.logs_dir())
+    };
+
+    scrapper_service::write_log(&logs_dir, "[CLASS] Starting browser session").await;
+    let browser = match playwright_service::BrowserSession::new().await {
+        Ok(s) => s,
+        Err(e) => {
+            scrapper_service::write_log(&logs_dir, &format!("[ERR  ] Class browser session failed: {}", e)).await;
+            return Err(e.to_string());
+        }
+    };
+    scrapper_service::write_log(&logs_dir, "[CLASS] Browser session ready").await;
+
+    class_service::init(&classes_dir, &logs_dir, &app, &browser)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

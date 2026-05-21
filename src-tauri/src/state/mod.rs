@@ -30,6 +30,10 @@ impl AppConfig {
     pub fn test_dir(&self) -> PathBuf {
         PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Test")
     }
+
+    pub fn classes_dir(&self) -> PathBuf {
+        PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Classes")
+    }
 }
 
 pub struct AppState(pub Mutex<AppConfig>);

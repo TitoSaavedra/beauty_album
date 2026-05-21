@@ -6,6 +6,7 @@
   export let preset: PresetEntry;
 
   $: firstImage = preset.image_paths?.[0] ? convertFileSrc(preset.image_paths[0]) : null;
+  $: isSkeleton = !preset.image_paths?.length;
   $: title = preset.title ?? preset.name ?? preset.preset_id ?? 'Untitled';
   $: creator = preset.creator ?? '';
   $: downloads = preset.downloads ?? 0;
@@ -21,6 +22,8 @@
   <div class="thumb-wrap">
     {#if firstImage}
       <img src={firstImage} alt={title} class="thumb" on:error={onThumbError} loading="lazy" />
+    {:else if isSkeleton}
+      <div class="skeleton-thumb"></div>
     {:else}
       <span class="no-media">NO MEDIA</span>
     {/if}
@@ -75,6 +78,19 @@
 
   .preset-card:hover .thumb {
     transform: scale(1.05);
+  }
+
+  .skeleton-thumb {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #0f141a 25%, #1a232c 50%, #0f141a 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
   .no-media {

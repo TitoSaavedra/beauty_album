@@ -50,17 +50,22 @@ impl GarmothClient {
         Self { api_client }
     }
 
-    pub async fn fetch_preset(&self, id: u64) -> Result<GarmothPreset, AppError> {
+    pub async fn fetch_preset(&self, id: u64) -> Result<(GarmothPreset, serde_json::Value), AppError> {
         let url = format!("{}/api/beauty-album/preset/{}", API_BASE, id);
-        self.api_client
+        let bytes = self.api_client
             .get(&url)
             .send()
             .await
             .map_err(|e| AppError::Scrape(format!("API request failed: {}", e)))?
             .error_for_status()
             .map_err(|e| AppError::Scrape(format!("API error status: {}", e)))?
-            .json::<GarmothPreset>()
+            .bytes()
             .await
-            .map_err(|e| AppError::Scrape(format!("API parse failed: {}", e)))
+            .map_err(|e| AppError::Scrape(format!("API read failed: {}", e)))?;
+        let raw: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|e| AppError::Scrape(format!("API parse failed: {}", e)))?;
+        let typed: GarmothPreset = serde_json::from_value(raw.clone())
+            .map_err(|e| AppError::Scrape(format!("API parse failed: {}", e)))?;
+        Ok((typed, raw))
     }
 }

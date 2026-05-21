@@ -3,7 +3,7 @@ mod errors;
 mod services;
 mod state;
 
-use commands::album::{get_classes, get_presets, inject_preset, open_file, open_logs};
+use commands::album::{get_classes, get_presets, init_classes, inject_preset, open_file, open_logs};
 use commands::config::{get_config, save_config};
 use commands::scrapper::{check_pending, run_scrapper, stop_scrapper};
 use services::{config_service, scrapper_service};
@@ -44,6 +44,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_classes,
             get_presets,
+            init_classes,
             get_config,
             save_config,
             inject_preset,

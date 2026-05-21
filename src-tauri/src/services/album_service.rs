@@ -1,14 +1,28 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 use crate::errors::AppError;
 
+fn load_class_icons(classes_dir: &Path) -> HashMap<String, String> {
+    let full_json = classes_dir.join("full.json");
+    let Ok(content) = fs::read_to_string(&full_json) else { return HashMap::new() };
+    let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(&content) else { return HashMap::new() };
 
-pub fn get_classes(base_dir: &Path) -> Result<Vec<serde_json::Value>, AppError> {
+    list.into_iter().filter_map(|v| {
+        let display = v["display"].as_str()?.to_string();
+        let icon = v["icon"].as_str().filter(|s| !s.is_empty())?;
+        let path = classes_dir.join(&display).join(icon);
+        path.exists().then(|| (display, path.to_string_lossy().replace('\\', "/").to_string()))
+    }).collect()
+}
+
+pub fn get_classes(base_dir: &Path, classes_dir: &Path) -> Result<Vec<serde_json::Value>, AppError> {
     if !base_dir.exists() {
         return Ok(Vec::new());
     }
 
+    let icons = load_class_icons(classes_dir);
     let mut classes = Vec::new();
 
     for entry in fs::read_dir(base_dir)? {
@@ -23,12 +37,7 @@ pub fn get_classes(base_dir: &Path) -> Result<Vec<serde_json::Value>, AppError> 
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let icon_path = path.join("icon.svg");
-        let icon = if icon_path.exists() {
-            Some(icon_path.to_string_lossy().replace('\\', "/").to_string())
-        } else {
-            None
-        };
+        let icon = icons.get(&name).cloned();
 
         let preset_count = fs::read_dir(&path)
             .map(|rd| {
