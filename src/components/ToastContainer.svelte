@@ -5,7 +5,7 @@
 <div class="toast-container">
   {#each $toast as t (t.id)}
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-    <div class="toast toast-{t.type}" on:click={() => toast.dismiss(t.id)}>
+    <div class="toast toast-{t.type}" class:clickable={!!t.onClick} on:click={() => { t.onClick?.(); toast.dismiss(t.id); }}>
       <span class="toast-bar"></span>
       <span class="toast-text">{t.text}</span>
     </div>
@@ -63,6 +63,7 @@
   .toast-success .toast-bar  { background: #b3861b; }
   .toast-success .toast-text { color: #c9a020; }
   .toast-success { border-color: rgba(179, 134, 27, 0.3); }
+  .toast-success.clickable:hover { border-color: rgba(255, 204, 77, 0.6); background: #0c1015; }
 
   .toast-error .toast-bar  { background: #7f1d1d; }
   .toast-error .toast-text { color: #f87171; }

@@ -11,6 +11,7 @@
   import ToastContainer from './components/ToastContainer.svelte';
   import { appConfig } from './stores/appConfig';
   import { toast } from './stores/toast';
+  import { presetDetail } from './stores/presetDetail';
 
   interface ScrapperProgress {
     preset_id: string;
@@ -21,7 +22,8 @@
     total: number;
   }
 
-  let config: AppConfig = { bdo_docs_dir: '' };
+  let config: AppConfig = { bdo_docs_dir: '', cf_clearance: '' };
+  let useTestDir = false;
   let scrapperRunning = false;
   let scrapperCurrent = 0;
   let scrapperTotal = 0;
@@ -35,8 +37,24 @@
   let loadingPresets = false;
   let classesError = '';
   let presetsError = '';
+  let classInitVisible = false;
+  let classInitCurrent = 0;
+  let classInitTotal = 0;
+  let classInitName = '';
 
   onMount(async () => {
+    listen('refresh_album', () => {
+      if (config.bdo_docs_dir) loadClasses(true);
+    });
+
+    listen<{ current: number; total: number; class_name: string }>('class_init_progress', ({ payload }) => {
+      classInitVisible = true;
+      classInitCurrent = payload.current;
+      classInitTotal = payload.total;
+      classInitName = payload.class_name;
+      toast.show(`Class ready: ${payload.class_name}`, 'success', 2000);
+    });
+
     listen<string[]>('folder_changed', ({ payload: files }) => {
       const label = files.length === 1 ? files[0] : `${files.length} new presets`;
       toast.show(`New preset found: ${label}`, 'success', 4000);
@@ -47,6 +65,7 @@
       config = await api.getConfig();
       appConfig.set(config);
       if (config.bdo_docs_dir) {
+        try { await api.initClasses(); } finally { classInitVisible = false; }
         await loadClasses();
         const pending = await api.checkPending();
         if (pending > 0) startScraper();
@@ -62,7 +81,7 @@
     presetsError = '';
     loadingPresets = true;
     try {
-      presets = await api.getPresets(name);
+      presets = await api.getPresets(name, useTestDir);
     } catch (err) {
       presetsError = String(err);
     } finally {
@@ -71,18 +90,26 @@
   }
 
   async function loadClasses(keepSelected = false) {
-    loadingClasses = true;
+    if (!keepSelected) loadingClasses = true;
     classesError = '';
     try {
       const prev = selectedClass;
-      classes = await api.getClasses();
+      const fresh = await api.getClasses(useTestDir);
+      if (!keepSelected || classes.length === 0) {
+        classes = fresh;
+      } else {
+        const freshMap = new Map(fresh.map(c => [c.name, c]));
+        classes = classes.map(c => freshMap.get(c.name) ?? c);
+        const newOnes = fresh.filter(c => !classes.some(e => e.name === c.name));
+        if (newOnes.length > 0) classes = [...classes, ...newOnes];
+      }
       const target = keepSelected && prev && classes.some(c => c.name === prev)
         ? prev
         : classes[0]?.name;
       if (!target) return;
       if (keepSelected && target === prev) {
         // Refresh in-place: Svelte only animates truly new preset_ids
-        try { presets = await api.getPresets(target); } catch (err) { presetsError = String(err); }
+        try { presets = await api.getPresets(target, useTestDir); } catch (err) { presetsError = String(err); }
       } else {
         await selectClass(target);
       }
@@ -119,8 +146,22 @@
       if (payload.current > 0) scrapperCurrent = payload.current;
       if (payload.message) scrapperMsg = payload.message;
 
-      if (payload.status === 'done') {
+      if (payload.status === 'metadata' || payload.status === 'done') {
         if (config.bdo_docs_dir) loadClasses(true);
+        if (payload.status === 'done') {
+          const pid = payload.preset_id;
+          const cls = payload.class_name;
+          toast.show(`${cls} #${pid} downloaded`, 'success', 5000, async () => {
+            const list = await api.getPresets(cls, useTestDir);
+            const found = list.find(p => p.preset_id === pid);
+            if (found) presetDetail.set(found);
+          });
+        }
+      } else if (payload.status === 'phase2_start') {
+        scrapperRunning = false;
+        scrapperMsg = '';
+        scrapperTotal = 0;
+        scrapperCurrent = 0;
       } else if (payload.status === 'error') {
         scrapperError = payload.message;
       } else if (payload.status === 'cancelled') {
@@ -130,7 +171,7 @@
 
     let alreadyRunning = false;
     try {
-      const doneMsg = await api.runScrapper();
+      const doneMsg = await api.runScrapper(useTestDir);
       if (doneMsg) toast.show(doneMsg, 'success', 6000);
     } catch (e) {
       const msg = String(e);
@@ -153,6 +194,14 @@
   async function stopScraper() {
     await api.stopScrapper();
   }
+
+  async function toggleDir() {
+    useTestDir = !useTestDir;
+    selectedClass = null;
+    presets = [];
+    if (config.bdo_docs_dir) await loadClasses();
+  }
+
 </script>
 
 <div class="app">
@@ -193,49 +242,60 @@
       {/if}
     </div>
     <div class="nav-actions">
-      {#if scrapperRunning}
-        <button class="btn-stop" on:click={stopScraper} title="Stop scrapping">Stop</button>
+      {#if scrapperRunning && useTestDir}
+        <button class="btn-stop" on:click={stopScraper} title="Stop">Stop</button>
       {:else}
-        <button class="btn-sync" style="display:none" on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
+        <button class="btn-sync" style={useTestDir ? '' : 'display:none'} on:click={startScraper} title="Sync presets from Garmoth">Sync</button>
+        {#if useTestDir}
+          <button class="btn-dir-toggle" class:active={useTestDir} on:click={toggleDir} title="Toggle between Presets and Test directories">Test</button>
+        {/if}
       {/if}
       <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
     </div>
   </nav>
 
-  {#if scrapperRunning || scrapperMsg}
+  {#if scrapperRunning || scrapperMsg || classInitVisible}
     <div class="scrapper-strip" class:has-error={!!scrapperError}>
       <div
         class="scrapper-fill"
-        style="width: {scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0}%"
+        style="width: {classInitVisible
+          ? (classInitTotal > 0 ? Math.round((classInitCurrent / classInitTotal) * 100) : 0)
+          : (scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0)}%"
       ></div>
       <span class="scrapper-label">
-        {#if scrapperTotal > 0}
-          {scrapperCurrent}/{scrapperTotal} —
+        {#if classInitVisible}
+          {classInitCurrent}/{classInitTotal} — {classInitName}
+        {:else}
+          {#if scrapperTotal > 0}{scrapperCurrent}/{scrapperTotal} —{/if}
+          {scrapperMsg}
         {/if}
-        {scrapperMsg}
       </span>
     </div>
   {/if}
 
   <div class="main-layout">
-    <aside class="sidebar">
-      <ClassList
-        {classes}
-        {selectedClass}
-        loading={loadingClasses}
-        error={classesError}
-        on:select={handleSelectClass}
-      />
-    </aside>
+    {#if classInitVisible}
+      <div class="main-layout-skeleton"></div>
+    {:else}
+      <aside class="sidebar">
+        <ClassList
+          {classes}
+          {selectedClass}
+          loading={loadingClasses}
+          error={classesError}
+          on:select={handleSelectClass}
+        />
+      </aside>
 
-    <main class="content custom-scroll">
-      <PresetGrid
-        {presets}
-        {selectedClass}
-        loading={loadingPresets}
-        error={presetsError}
-      />
-    </main>
+      <main class="content custom-scroll">
+        <PresetGrid
+          {presets}
+          {selectedClass}
+          loading={loadingPresets}
+          error={presetsError}
+        />
+      </main>
+    {/if}
   </div>
 </div>
 
@@ -391,6 +451,33 @@
     text-overflow: ellipsis;
   }
 
+  .btn-dir-toggle {
+    padding: 0 12px;
+    height: 34px;
+    background: transparent;
+    border: 1px solid #1a232c;
+    border-radius: 5px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    min-width: 64px;
+  }
+
+  .btn-dir-toggle:hover {
+    border-color: #64748b;
+    color: #94a3b8;
+  }
+
+  .btn-dir-toggle.active {
+    border-color: rgba(99, 102, 241, 0.55);
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.08);
+  }
+
   .btn-settings {
     background: transparent;
     border: 1px solid #1a232c;
@@ -434,5 +521,17 @@
     position: relative;
     background-image: radial-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 0);
     background-size: 24px 24px;
+  }
+
+  .main-layout-skeleton {
+    flex: 1;
+    background: linear-gradient(90deg, #070a0e 25%, #0f141a 50%, #070a0e 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 </style>

@@ -4,6 +4,7 @@ export interface ToastMessage {
     id: number;
     text: string;
     type: 'success' | 'error';
+    onClick?: () => void;
 }
 
 let nextId = 0;
@@ -12,9 +13,9 @@ function createToast() {
     const { subscribe, update } = writable<ToastMessage[]>([]);
     return {
         subscribe,
-        show(text: string, type: ToastMessage['type'] = 'success', duration = 3500) {
+        show(text: string, type: ToastMessage['type'] = 'success', duration = 3500, onClick?: () => void) {
             const id = ++nextId;
-            update(list => [...list, { id, text, type }]);
+            update(list => [...list, { id, text, type, onClick }]);
             setTimeout(() => {
                 update(list => list.filter(t => t.id !== id));
             }, duration);

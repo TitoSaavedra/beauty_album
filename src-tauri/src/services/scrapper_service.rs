@@ -1,17 +1,14 @@
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Manager};
 
 use crate::errors::AppError;
-
-const SERVER: &str = "http://127.0.0.1:8765";
-const READY_POLL_MS: u64 = 200;
-const READY_TIMEOUT_SECS: u64 = 30;
+use crate::services::{events, garmoth_client::{GarmothClient, GarmothPreset}, playwright_service};
+use crate::state::AppState;
 
 #[derive(Serialize, Clone)]
 pub struct ScrapperProgress {
@@ -23,137 +20,375 @@ pub struct ScrapperProgress {
     pub total: usize,
 }
 
+struct PendingPreset {
+    preset_id: u64,
+    class_hint: String,
+    pab_path: PathBuf,
+}
+
+fn parse_pab_filename(filename: &str) -> Option<(String, u64)> {
+    let stem = filename.strip_suffix(".pab").unwrap_or(filename);
+    let underscore = stem.find('_')?;
+    let class_hint = stem[..underscore].to_string();
+    let id_pos = stem.rfind("ID")?;
+    let after_id = &stem[id_pos + 2..];
+    let digits: String = after_id.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() { return None; }
+    let id: u64 = digits.parse().ok()?;
+    Some((class_hint, id))
+}
+
+fn scan_input(input_dir: &Path) -> Vec<PendingPreset> {
+    let mut result = Vec::new();
+    scan_recursive(input_dir, &mut result);
+    result
+}
+
+fn scan_recursive(dir: &Path, result: &mut Vec<PendingPreset>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_recursive(&path, result);
+        } else if path.is_file() {
+            let filename = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if let Some((class_hint, preset_id)) = parse_pab_filename(&filename) {
+                result.push(PendingPreset { preset_id, class_hint, pab_path: path });
+            }
+        }
+    }
+}
+
+fn ok_exists(presets_dir: &Path, preset_id: u64) -> bool {
+    let Ok(rd) = std::fs::read_dir(presets_dir) else { return false };
+    rd.flatten().any(|class_entry| {
+        class_entry
+            .path()
+            .join(preset_id.to_string())
+            .join(".ok")
+            .exists()
+    })
+}
+
+pub fn pending_count(input_dir: &Path, presets_dir: &Path) -> usize {
+    scan_input(input_dir)
+        .iter()
+        .filter(|p| !ok_exists(presets_dir, p.preset_id))
+        .count()
+}
+
+struct FetchedMeta {
+    preset: PendingPreset,
+    data: GarmothPreset,
+    raw: serde_json::Value,
+    preset_dir: PathBuf,
+    pab_filename: String,
+    image_1: Option<String>,
+    image_2: Option<String>,
+}
+
+fn build_metadata_json(data: &GarmothPreset, raw: &serde_json::Value, images: &[String], pab_filename: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": data.id,
+        "title": data.title,
+        "class": data.class,
+        "creation_at": data.creation_at,
+        "updated_at": chrono::Local::now().timestamp(),
+        "image_1": data.image_1,
+        "image_2": data.image_2,
+        "user_nickname": data.user_nickname,
+        "character_name": data.character_name,
+        "downloads": data.downloads,
+        "views": data.views,
+        "likes": data.likes,
+        "images": images,
+        "customization_file": pab_filename,
+        "_backup": raw,
+    })
+}
+
 pub async fn run(
     app: &AppHandle,
+    input_dir: &Path,
+    presets_dir: &Path,
     logs_dir: &Path,
     cancel: Arc<AtomicBool>,
+    dev_mode: bool,
 ) -> Result<String, AppError> {
-    wait_for_server().await?;
-    write_log(logs_dir, "[SYNC ] Scrapper started via FastAPI").await;
+    let all = scan_input(input_dir);
+    let pending: Vec<PendingPreset> = if dev_mode {
+        all
+    } else {
+        all.into_iter().filter(|p| !ok_exists(presets_dir, p.preset_id)).collect()
+    };
 
-    let client = reqwest::Client::new();
+    let total = pending.len();
+    let prefix = if dev_mode { "[DEV  ]" } else { "[SYNC ]" };
+    write_log(logs_dir, &format!("{} Starting sync: {} preset(s) pending", prefix, total)).await;
 
-    client
-        .post(format!("{}/scrape", SERVER))
-        .send()
-        .await
-        .map_err(|e| AppError::Scrape(format!("POST /scrape failed: {}", e)))?
-        .error_for_status()
-        .map_err(|e| AppError::Scrape(format!("POST /scrape error: {}", e)))?;
+    if total == 0 {
+        return Ok("No presets pending".to_string());
+    }
 
-    let response = match client
-        .get(format!("{}/events", SERVER))
-        .send()
-        .await
-    {
-        Ok(r) => r,
+    let cf_clearance = {
+        let state = app.state::<AppState>();
+        let guard = state.0.lock().map_err(|e| AppError::Scrape(e.to_string()))?;
+        let val = guard.cf_clearance.clone();
+        drop(guard);
+        val
+    };
+
+    let client = Arc::new(GarmothClient::new(&cf_clearance));
+
+    write_log(logs_dir, &format!("{} Starting browser session", prefix)).await;
+    let browser = match playwright_service::BrowserSession::new().await {
+        Ok(s) => { write_log(logs_dir, &format!("{} Browser session ready", prefix)).await; s }
         Err(e) => {
-            let msg = format!("GET /events failed: {}", e);
-            write_log(logs_dir, &format!("[ERR  ] {}", msg)).await;
-            return Err(AppError::Scrape(msg));
+            write_log(logs_dir, &format!("[ERR  ] Browser session failed: {}", e)).await;
+            return Err(e);
         }
     };
 
-    write_log(logs_dir, &format!("[SYNC ] SSE connected (status {})", response.status())).await;
+    // All JSON fetches run concurrently; each sends its result into this channel
+    // so the image downloader below processes them one-at-a-time as they arrive.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<FetchedMeta>(total);
+    let fetch_errors = Arc::new(AtomicUsize::new(0));
+    let n_meta = Arc::new(AtomicUsize::new(0));
 
-    let mut stream = response.bytes_stream();
-    use futures_util::StreamExt;
-    let mut buf = String::new();
-    let mut done_msg = String::new();
-    let mut chunks_received: usize = 0;
+    for (i, preset) in pending.into_iter().enumerate() {
+        let client = Arc::clone(&client);
+        let tx = tx.clone();
+        let app_h = app.clone();
+        let logs = logs_dir.to_path_buf();
+        let p_dir = presets_dir.to_path_buf();
+        let cancel = Arc::clone(&cancel);
+        let fetch_errors = Arc::clone(&fetch_errors);
+        let n_meta = Arc::clone(&n_meta);
 
-    loop {
-        tokio::select! {
-            chunk = stream.next() => {
-                match chunk {
-                    Some(Ok(bytes)) => {
-                        chunks_received += 1;
-                        write_log(logs_dir, &format!("[SYNC ] SSE chunk #{}: {} bytes", chunks_received, bytes.len())).await;
-                        buf.push_str(&String::from_utf8_lossy(&bytes));
-                        if let Some(msg) = drain_events(&mut buf, app, logs_dir) {
-                            done_msg = msg;
-                        }
-                    }
-                    Some(Err(e)) => {
-                        write_log(logs_dir, &format!("[ERR  ] SSE read error: {}", e)).await;
-                        return Err(AppError::Scrape(format!("SSE read error: {}", e)));
-                    }
-                    None => {
-                        write_log(logs_dir, "[SYNC ] SSE stream closed").await;
-                        break;
-                    }
-                }
+        tokio::spawn(async move {
+            if cancel.load(Ordering::Relaxed) {
+                events::emit_progress(&app_h, ScrapperProgress {
+                    preset_id: preset.preset_id.to_string(),
+                    status: "cancelled".to_string(),
+                    message: "Cancelled by user".to_string(),
+                    class_name: preset.class_hint.clone(),
+                    current: i + 1,
+                    total,
+                });
+                return;
             }
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                if cancel.load(Ordering::Relaxed) {
-                    client.post(format!("{}/stop", SERVER)).send().await.ok();
-                    write_log(logs_dir, "[USER ] Scrapper cancelled by user").await;
-                    break;
-                }
-            }
-        }
-    }
 
-    write_log(logs_dir, &format!("[SYNC ] Scrapper finished — done_msg={:?}", done_msg)).await;
-    Ok(done_msg)
-}
-
-fn drain_events(buf: &mut String, app: &AppHandle, logs_dir: &Path) -> Option<String> {
-    let mut done_msg = None;
-    loop {
-        let Some(nl) = buf.find('\n') else { break };
-        let line = buf[..nl].trim().to_string();
-        buf.drain(..=nl);
-
-        let data = line.strip_prefix("data:").map(str::trim).unwrap_or("");
-        if data.is_empty() {
-            continue;
-        }
-        let Ok(val) = serde_json::from_str::<Value>(data) else {
-            write_log_sync(logs_dir, &format!("[WARN ] SSE parse failed: {}", &data[..data.len().min(120)]));
-            continue;
-        };
-        let msg_type = val["type"].as_str().unwrap_or("");
-
-        if msg_type == "progress" {
-            let status = val["status"].as_str().unwrap_or("");
-            let preset_id = val["preset_id"].as_str().unwrap_or("");
-            let class_name = val["class_hint"].as_str().unwrap_or("").to_string();
-            write_log_sync(logs_dir, &format!("[SYNC ] Emitting event: status={} preset_id={} class={}", status, preset_id, class_name));
-            let _ = app.emit("scrapper_progress", ScrapperProgress {
-                preset_id: preset_id.to_string(),
-                status:    status.to_string(),
-                message:   val["message"].as_str().unwrap_or("").to_string(),
-                class_name,
-                current:   val["current"].as_u64().unwrap_or(0) as usize,
-                total:     val["total"].as_u64().unwrap_or(0) as usize,
+            events::emit_progress(&app_h, ScrapperProgress {
+                preset_id: preset.preset_id.to_string(),
+                status: "processing".to_string(),
+                message: format!("Fetching {}", preset.preset_id),
+                class_name: preset.class_hint.clone(),
+                current: i + 1,
+                total,
             });
-        } else if msg_type == "done" {
-            let msg = format!(
-                "Finished — {} done  {} skipped  {} error(s)",
-                val["n_done"].as_u64().unwrap_or(0),
-                val["n_skip"].as_u64().unwrap_or(0),
-                val["n_error"].as_u64().unwrap_or(0),
+
+            let (data, raw) = match client.fetch_preset(preset.preset_id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    fetch_errors.fetch_add(1, Ordering::Relaxed);
+                    write_log(&logs, &format!("[ERR  ] Meta {} failed: {}", preset.preset_id, e)).await;
+                    return;
+                }
+            };
+
+            let preset_dir = p_dir.join(&preset.class_hint).join(preset.preset_id.to_string());
+            let _ = tokio::fs::create_dir_all(&preset_dir).await;
+
+            let pab_filename = preset.pab_path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let _ = tokio::fs::copy(&preset.pab_path, preset_dir.join(&pab_filename)).await;
+
+            let mut image_1 = data.image_1.as_deref().filter(|s| !s.is_empty()).map(String::from);
+            let mut image_2 = data.image_2.as_deref().filter(|s| !s.is_empty()).map(String::from);
+            if image_1.is_none() && image_2.is_some() {
+                image_1 = image_2.take();
+            }
+
+            let skeleton = build_metadata_json(&data, &raw, &[], &pab_filename);
+            let _ = tokio::fs::write(
+                preset_dir.join(format!("{}.json", preset.preset_id)),
+                serde_json::to_string_pretty(&skeleton).unwrap_or_default(),
+            ).await;
+
+            let current = n_meta.fetch_add(1, Ordering::Relaxed) + 1;
+            write_log(&logs, &format!("[META ] Preset {}", preset.preset_id)).await;
+            events::emit_progress(&app_h, ScrapperProgress {
+                preset_id: preset.preset_id.to_string(),
+                status: "metadata".to_string(),
+                message: format!("Ready: {}", preset.preset_id),
+                class_name: preset.class_hint.clone(),
+                current,
+                total,
+            });
+
+            let _ = tx.send(FetchedMeta { preset, data, raw, preset_dir, pab_filename, image_1, image_2 }).await;
+        });
+    }
+    drop(tx); // channel closes once every spawned task drops its clone
+
+    // Sequential image downloader — one image_1 at a time, in arrival order
+    let mut n_done = 0usize;
+    let mut n_img_err = 0usize;
+    let mut fetched: Vec<FetchedMeta> = Vec::new();
+    let mut img_current = 0usize;
+
+    while let Some(meta) = rx.recv().await {
+        img_current += 1;
+
+        if cancel.load(Ordering::Relaxed) {
+            write_log(logs_dir, "[USER ] Sync cancelled").await;
+            events::emit_progress(app, ScrapperProgress {
+                preset_id: meta.preset.preset_id.to_string(),
+                status: "cancelled".to_string(),
+                message: "Cancelled by user".to_string(),
+                class_name: meta.preset.class_hint.clone(),
+                current: img_current,
+                total,
+            });
+            fetched.push(meta);
+            while rx.recv().await.is_some() {} // drain remaining
+            break;
+        }
+
+        if let Some(ref img1) = meta.image_1 {
+            let url = format!(
+                "https://assets.garmoth.com/beauty-album/images/{}/{}",
+                meta.data.class, img1
             );
-            write_log_sync(logs_dir, &format!("[SYNC ] SSE done event: {}", msg));
-            done_msg = Some(msg);
+            events::emit_progress(app, ScrapperProgress {
+                preset_id: meta.preset.preset_id.to_string(),
+                status: "processing".to_string(),
+                message: format!("Downloading {}", meta.preset.preset_id),
+                class_name: meta.preset.class_hint.clone(),
+                current: img_current,
+                total,
+            });
+            match browser.download(&url).await {
+                Ok(bytes) => {
+                    let _ = tokio::fs::write(meta.preset_dir.join(img1), &bytes).await;
+                    let updated = build_metadata_json(&meta.data, &meta.raw, &[img1.clone()], &meta.pab_filename);
+                    let _ = tokio::fs::write(
+                        meta.preset_dir.join(format!("{}.json", meta.preset.preset_id)),
+                        serde_json::to_string_pretty(&updated).unwrap_or_default(),
+                    ).await;
+                    let _ = tokio::fs::write(meta.preset_dir.join(".ok"), b"").await;
+                    n_done += 1;
+                    write_log(logs_dir, &format!("{} Done: preset {}", prefix, meta.preset.preset_id)).await;
+                    events::emit_progress(app, ScrapperProgress {
+                        preset_id: meta.preset.preset_id.to_string(),
+                        status: "done".to_string(),
+                        message: format!("Synced preset {}", meta.preset.preset_id),
+                        class_name: meta.preset.class_hint.clone(),
+                        current: img_current,
+                        total,
+                    });
+                }
+                Err(e) => {
+                    n_img_err += 1;
+                    write_log(logs_dir, &format!("[ERR  ] image_1 {} failed: {}", meta.preset.preset_id, e)).await;
+                }
+            }
         } else {
-            write_log_sync(logs_dir, &format!("[SYNC ] SSE unknown type: {}", msg_type));
+            let _ = tokio::fs::write(meta.preset_dir.join(".ok"), b"").await;
+            n_done += 1;
+            write_log(logs_dir, &format!("{} Done (no images): preset {}", prefix, meta.preset.preset_id)).await;
+            events::emit_progress(app, ScrapperProgress {
+                preset_id: meta.preset.preset_id.to_string(),
+                status: "done".to_string(),
+                message: format!("Synced preset {}", meta.preset.preset_id),
+                class_name: meta.preset.class_hint.clone(),
+                current: img_current,
+                total,
+            });
+        }
+
+        fetched.push(meta);
+        jitter_sleep().await;
+    }
+
+    events::emit_refresh_album(app);
+
+    events::emit_progress(app, ScrapperProgress {
+        preset_id: String::new(),
+        status: "phase2_start".to_string(),
+        message: String::new(),
+        class_name: String::new(),
+        current: 0,
+        total: 0,
+    });
+
+    // image_2 pass — silent best-effort after all image_1s are done
+    let img2_list: Vec<&FetchedMeta> = fetched.iter()
+        .filter(|m| m.image_2.is_some() && ok_exists(presets_dir, m.preset.preset_id))
+        .collect();
+
+    if !img2_list.is_empty() {
+        write_log(logs_dir, &format!("{} Phase 2: downloading image_2 for {} preset(s)", prefix, img2_list.len())).await;
+        for meta in img2_list {
+            if cancel.load(Ordering::Relaxed) {
+                write_log(logs_dir, "[USER ] Sync cancelled").await;
+                break;
+            }
+            let img2 = meta.image_2.as_ref().unwrap();
+            let url = format!(
+                "https://assets.garmoth.com/beauty-album/images/{}/{}",
+                meta.data.class, img2
+            );
+            match browser.download(&url).await {
+                Ok(bytes) => {
+                    let _ = tokio::fs::write(meta.preset_dir.join(img2), &bytes).await;
+                    let images: Vec<String> = meta.image_1.iter().chain(std::iter::once(img2)).cloned().collect();
+                    let updated = build_metadata_json(&meta.data, &meta.raw, &images, &meta.pab_filename);
+                    let _ = tokio::fs::write(
+                        meta.preset_dir.join(format!("{}.json", meta.preset.preset_id)),
+                        serde_json::to_string_pretty(&updated).unwrap_or_default(),
+                    ).await;
+                    write_log(logs_dir, &format!("{} Done image_2: preset {}", prefix, meta.preset.preset_id)).await;
+                }
+                Err(e) => {
+                    write_log(logs_dir, &format!("[ERR  ] image_2 {} failed: {}", meta.preset.preset_id, e)).await;
+                }
+            }
+            jitter_sleep().await;
         }
     }
-    done_msg
+
+    let n_err = fetch_errors.load(Ordering::Relaxed) + n_img_err;
+    let msg = format!("Finished — {} done  {} error(s)", n_done, n_err);
+    write_log(logs_dir, &format!("{} {}", prefix, msg)).await;
+    Ok(msg)
 }
+
+async fn jitter_sleep() {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_millis(); // 0–999
+    let delay_ms = 100u64 + (millis as u64 * 12 / 10); // 100–1298 ms
+    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+}
+
 
 pub async fn watch_input_dir(
     app: AppHandle,
-    input_dir: std::path::PathBuf,
-    logs_dir: std::path::PathBuf,
+    input_dir: PathBuf,
+    logs_dir: PathBuf,
 ) {
     let mut known = collect_input_files(&input_dir);
     write_log(
         &logs_dir,
         &format!("[WATCH] Watching input dir: {} ({} known file(s))", input_dir.display(), known.len()),
-    ).await;
+    )
+    .await;
 
     loop {
         tokio::time::sleep(Duration::from_secs(20)).await;
@@ -166,60 +401,31 @@ pub async fn watch_input_dir(
         if !new_files.is_empty() {
             write_log(
                 &logs_dir,
-                &format!("[WATCH] New file(s) detected: {} — notifying frontend", new_files.join(", ")),
-            ).await;
-            let _ = app.emit("folder_changed", new_files);
-            write_log(&logs_dir, "[WATCH] Cooldown 60s before next watch poll").await;
+                &format!("[WATCH] New file(s): {} — notifying frontend", new_files.join(", ")),
+            )
+            .await;
+            events::emit_folder_changed(&app, new_files);
+            write_log(&logs_dir, "[WATCH] Cooldown 60s").await;
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     }
 }
 
-fn collect_input_files(dir: &std::path::Path) -> std::collections::HashSet<std::path::PathBuf> {
+fn collect_input_files(dir: &Path) -> std::collections::HashSet<PathBuf> {
     let mut files = std::collections::HashSet::new();
-    collect_recursive(dir, &mut files);
+    collect_recursive_files(dir, &mut files);
     files
 }
 
-fn collect_recursive(dir: &std::path::Path, files: &mut std::collections::HashSet<std::path::PathBuf>) {
+fn collect_recursive_files(dir: &Path, files: &mut std::collections::HashSet<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for entry in rd.flatten() {
         let p = entry.path();
         if p.is_file() {
             files.insert(p);
         } else if p.is_dir() {
-            collect_recursive(&p, files);
+            collect_recursive_files(&p, files);
         }
-    }
-}
-
-pub async fn pending_count() -> Result<usize, AppError> {
-    wait_for_server().await?;
-    let client = reqwest::Client::new();
-    let val = client
-        .get(format!("{}/pending", SERVER))
-        .send()
-        .await
-        .map_err(|e| AppError::Scrape(format!("GET /pending failed: {}", e)))?
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| AppError::Scrape(format!("parse /pending failed: {}", e)))?;
-    Ok(val["count"].as_u64().unwrap_or(0) as usize)
-}
-
-async fn wait_for_server() -> Result<(), AppError> {
-    let client = reqwest::Client::new();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(READY_TIMEOUT_SECS);
-    loop {
-        if client.get(format!("{}/health", SERVER)).send().await.is_ok() {
-            return Ok(());
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return Err(AppError::Scrape(format!(
-                "Python server not ready after {}s", READY_TIMEOUT_SECS
-            )));
-        }
-        tokio::time::sleep(Duration::from_millis(READY_POLL_MS)).await;
     }
 }
 

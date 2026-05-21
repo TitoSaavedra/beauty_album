@@ -14,6 +14,7 @@ This application replaces the previous local FastAPI architecture with native de
 - Avoid speculative architecture.
 - Optimize for maintainability and desktop responsiveness.
 - Prioritize consistency over personal preference.
+- Do not build or Test
 
 ---
 

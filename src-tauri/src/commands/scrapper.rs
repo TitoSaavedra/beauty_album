@@ -7,19 +7,22 @@ use crate::state::{AppState, ScrapperCancelToken};
 #[tauri::command]
 pub async fn run_scrapper(
     app: AppHandle,
+    dev_mode: bool,
     state: State<'_, AppState>,
     cancel: State<'_, ScrapperCancelToken>,
 ) -> Result<String, String> {
     cancel.0.store(false, Ordering::Relaxed);
 
-    let logs_dir = {
+    let (input_dir, presets_dir, logs_dir) = {
         let config = state.0.lock().map_err(|e| e.to_string())?;
-        config.logs_dir()
+        let out = if dev_mode { config.test_dir() } else { config.presets_dir() };
+        (config.to_download_dir(), out, config.logs_dir())
     };
 
-    scrapper_service::write_log(&logs_dir, "[USER ] Sync requested").await;
+    let log_prefix = if dev_mode { "[DEV  ]" } else { "[USER ]" };
+    scrapper_service::write_log(&logs_dir, &format!("{} Sync requested", log_prefix)).await;
 
-    scrapper_service::run(&app, &logs_dir, cancel.0.clone())
+    scrapper_service::run(&app, &input_dir, &presets_dir, &logs_dir, cancel.0.clone(), dev_mode)
         .await
         .map_err(|e| e.to_string())
 }
@@ -35,13 +38,11 @@ pub fn stop_scrapper(cancel: State<'_, ScrapperCancelToken>, state: State<'_, Ap
 
 #[tauri::command]
 pub async fn check_pending(state: State<'_, AppState>) -> Result<usize, String> {
-    let logs_dir = {
+    let (input_dir, presets_dir, logs_dir) = {
         let config = state.0.lock().map_err(|e| e.to_string())?;
-        config.logs_dir()
+        (config.to_download_dir(), config.presets_dir(), config.logs_dir())
     };
-    let count = scrapper_service::pending_count()
-        .await
-        .map_err(|e| e.to_string())?;
+    let count = scrapper_service::pending_count(&input_dir, &presets_dir);
     scrapper_service::write_log(&logs_dir, &format!("[INFO ] Pending check: {} preset(s) need sync", count)).await;
     Ok(count)
 }

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { fly } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import type { ClassEntry } from '../../tauri/album';
 
@@ -10,10 +12,33 @@
 
   const dispatch = createEventDispatcher<{ select: string }>();
 
+  const FAVORITES_KEY = 'beauty_album_favorites';
+  let favorites: Set<string> = new Set(
+    JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]')
+  );
+
+  function toggleFavorite(name: string, e: MouseEvent) {
+    e.stopPropagation();
+    if (favorites.has(name)) {
+      favorites.delete(name);
+    } else {
+      favorites.add(name);
+    }
+    favorites = new Set(favorites);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]));
+  }
+
   let search = '';
   $: filtered = search.trim()
     ? classes.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
     : classes;
+
+  $: sorted = [...filtered].sort((a, b) => {
+    const aFav = favorites.has(a.name);
+    const bFav = favorites.has(b.name);
+    if (aFav !== bFav) return aFav ? -1 : 1;
+    return b.preset_count - a.preset_count;
+  });
 
   function onIconError(e: Event) {
     (e.currentTarget as HTMLElement).style.display = 'none';
@@ -36,30 +61,43 @@
     <p class="status error">{error}</p>
   {:else if classes.length === 0}
     <p class="status">Open ⚙ to set album directory</p>
-  {:else if filtered.length === 0}
+  {:else if sorted.length === 0}
     <p class="status">No results</p>
   {:else}
-    {#each filtered as cls (cls.name)}
-      <button
-        class="class-btn"
-        class:active={cls.name === selectedClass}
-        on:click={() => dispatch('select', cls.name)}
+    {#each sorted as cls (cls.name)}
+      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+      <div
+        animate:flip={{ duration: 220 }}
+        in:fly={{ y: 8, duration: 180 }}
+        class="class-row"
       >
-        <span class="cls-name">{cls.name}</span>
-        <div class="cls-right">
-          {#if cls.preset_count > 0}
-            <span class="count">{cls.preset_count}</span>
-          {/if}
-          {#if cls.icon_path}
-            <img
-              src={convertFileSrc(cls.icon_path)}
-              alt=""
-              class="cls-icon"
-              on:error={onIconError}
-            />
-          {/if}
-        </div>
-      </button>
+        <button
+          class="class-btn"
+          class:active={cls.name === selectedClass}
+          on:click={() => dispatch('select', cls.name)}
+        >
+          <span class="cls-name">{cls.name}</span>
+          <div class="cls-right">
+            {#if cls.preset_count > 0}
+              <span class="count">{cls.preset_count}</span>
+            {/if}
+            <span
+              class="heart"
+              class:active={favorites.has(cls.name)}
+              on:click={(e) => toggleFavorite(cls.name, e)}
+              title="Pin to top"
+            >♥</span>
+            {#if cls.icon_path}
+              <img
+                src={convertFileSrc(cls.icon_path)}
+                alt=""
+                class="cls-icon"
+                on:error={onIconError}
+              />
+            {/if}
+          </div>
+        </button>
+      </div>
     {/each}
   {/if}
 </div>
@@ -86,7 +124,6 @@
   }
 
   .search-input::placeholder { color: #64748b; }
-
   .search-input:focus { border-color: #ffcc4d; }
 
   .list {
@@ -107,6 +144,10 @@
   }
 
   .error { color: #f87171; }
+
+  .class-row {
+    width: 100%;
+  }
 
   .class-btn {
     display: flex;
@@ -161,6 +202,20 @@
   }
 
   .class-btn.active .count { color: rgba(255, 204, 77, 0.6); }
+
+  .heart {
+    font-size: 11px;
+    color: #1a232c;
+    cursor: pointer;
+    transition: color 0.15s, transform 0.15s;
+    line-height: 1;
+    padding: 2px;
+    user-select: none;
+  }
+
+  .heart:hover { color: rgba(255, 100, 100, 0.5); transform: scale(1.2); }
+  .heart.active { color: #e05252; }
+  .heart.active:hover { color: #ff6b6b; }
 
   .cls-icon {
     width: 20px;

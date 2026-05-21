@@ -30,7 +30,7 @@
     saving = true;
     error = '';
     try {
-      const updated: AppConfig = { bdo_docs_dir: bdo_docs_dir.trim() };
+      const updated: AppConfig = { bdo_docs_dir: bdo_docs_dir.trim(), cf_clearance: config.cf_clearance ?? '' };
       await saveConfig(updated);
       dispatch('save', updated);
     } catch (e) {
