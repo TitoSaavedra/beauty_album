@@ -136,6 +136,15 @@ pub fn get_presets(base_dir: &Path, class_name: &str) -> Result<Vec<serde_json::
 
         data["download_path"] = serde_json::json!(download_path);
 
+        data["favorites"] = data["likes"].clone();
+        data["creator"]   = data["user_nickname"].clone();
+        if let Some(ts) = data["creation_at"].as_i64() {
+            use chrono::{TimeZone, Utc};
+            if let chrono::LocalResult::Single(dt) = Utc.timestamp_opt(ts, 0) {
+                data["date"] = serde_json::json!(dt.format("%Y-%m-%d").to_string());
+            }
+        }
+
         presets.push(data);
     }
 

@@ -22,6 +22,10 @@ pub fn emit_folder_changed(app: &AppHandle, files: Vec<String>) {
     let _ = app.emit("folder_changed", files);
 }
 
+pub fn emit_popular_progress(app: &AppHandle, progress: ScrapperProgress) {
+    let _ = app.emit("popular_progress", progress);
+}
+
 pub fn emit_refresh_album(app: &AppHandle) {
     let _ = app.emit("refresh_album", ());
 }

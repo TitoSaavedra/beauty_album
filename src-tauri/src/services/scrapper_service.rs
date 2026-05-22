@@ -110,24 +110,32 @@ fn build_metadata_json(data: &GarmothPreset, raw: &serde_json::Value, images: &[
     })
 }
 
+fn find_image_in_popular(popular_dir: &Path, preset_id: u64, img_name: &str) -> Option<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(popular_dir) else { return None };
+    for class_entry in rd.flatten() {
+        let candidate = class_entry.path().join(preset_id.to_string()).join(img_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 pub async fn run(
     app: &AppHandle,
     input_dir: &Path,
     presets_dir: &Path,
+    popular_dir: &Path,
     logs_dir: &Path,
     cancel: Arc<AtomicBool>,
-    dev_mode: bool,
 ) -> Result<String, AppError> {
-    let all = scan_input(input_dir);
-    let pending: Vec<PendingPreset> = if dev_mode {
-        all
-    } else {
-        all.into_iter().filter(|p| !ok_exists(presets_dir, p.preset_id)).collect()
-    };
+    let pending: Vec<PendingPreset> = scan_input(input_dir)
+        .into_iter()
+        .filter(|p| !ok_exists(presets_dir, p.preset_id))
+        .collect();
 
     let total = pending.len();
-    let prefix = if dev_mode { "[DEV  ]" } else { "[SYNC ]" };
-    write_log(logs_dir, &format!("{} Starting sync: {} preset(s) pending", prefix, total)).await;
+    write_log(logs_dir, &format!("[SYNC ] Starting sync: {} preset(s) pending", total)).await;
 
     if total == 0 {
         return Ok("No presets pending".to_string());
@@ -143,9 +151,9 @@ pub async fn run(
 
     let client = Arc::new(GarmothClient::new(&cf_clearance));
 
-    write_log(logs_dir, &format!("{} Starting browser session", prefix)).await;
+    write_log(logs_dir, "[SYNC ] Starting browser session").await;
     let browser = match playwright_service::BrowserSession::new().await {
-        Ok(s) => { write_log(logs_dir, &format!("{} Browser session ready", prefix)).await; s }
+        Ok(s) => { write_log(logs_dir, "[SYNC ] Browser session ready").await; s }
         Err(e) => {
             write_log(logs_dir, &format!("[ERR  ] Browser session failed: {}", e)).await;
             return Err(e);
@@ -260,10 +268,6 @@ pub async fn run(
         }
 
         if let Some(ref img1) = meta.image_1 {
-            let url = format!(
-                "https://assets.garmoth.com/beauty-album/images/{}/{}",
-                meta.data.class, img1
-            );
             events::emit_progress(app, ScrapperProgress {
                 preset_id: meta.preset.preset_id.to_string(),
                 status: "processing".to_string(),
@@ -272,35 +276,58 @@ pub async fn run(
                 current: img_current,
                 total,
             });
-            match browser.download(&url).await {
-                Ok(bytes) => {
-                    let _ = tokio::fs::write(meta.preset_dir.join(img1), &bytes).await;
-                    let updated = build_metadata_json(&meta.data, &meta.raw, &[img1.clone()], &meta.pab_filename);
-                    let _ = tokio::fs::write(
-                        meta.preset_dir.join(format!("{}.json", meta.preset.preset_id)),
-                        serde_json::to_string_pretty(&updated).unwrap_or_default(),
-                    ).await;
-                    let _ = tokio::fs::write(meta.preset_dir.join(".ok"), b"").await;
-                    n_done += 1;
-                    write_log(logs_dir, &format!("{} Done: preset {}", prefix, meta.preset.preset_id)).await;
-                    events::emit_progress(app, ScrapperProgress {
-                        preset_id: meta.preset.preset_id.to_string(),
-                        status: "done".to_string(),
-                        message: format!("Synced preset {}", meta.preset.preset_id),
-                        class_name: meta.preset.class_hint.clone(),
-                        current: img_current,
-                        total,
-                    });
+
+            let dest = meta.preset_dir.join(img1);
+            let mut got_image = false;
+
+            // Check Popular folder first before downloading
+            if let Some(src) = find_image_in_popular(popular_dir, meta.preset.preset_id, img1) {
+                if tokio::fs::copy(&src, &dest).await.is_ok() {
+                    got_image = true;
+                    write_log(logs_dir, &format!("[SYNC ] Copied from Popular: preset {}", meta.preset.preset_id)).await;
                 }
-                Err(e) => {
-                    n_img_err += 1;
-                    write_log(logs_dir, &format!("[ERR  ] image_1 {} failed: {}", meta.preset.preset_id, e)).await;
+            }
+
+            if !got_image {
+                let url = format!(
+                    "https://assets.garmoth.com/beauty-album/images/{}/{}",
+                    meta.data.class, img1
+                );
+                match browser.download(&url).await {
+                    Ok(bytes) => {
+                        let _ = tokio::fs::write(&dest, &bytes).await;
+                        got_image = true;
+                        write_log(logs_dir, &format!("[SYNC ] Downloaded image_1 for preset {} ({}B)", meta.preset.preset_id, bytes.len())).await;
+                    }
+                    Err(e) => {
+                        n_img_err += 1;
+                        write_log(logs_dir, &format!("[ERR  ] image_1 {} failed: {}", meta.preset.preset_id, e)).await;
+                    }
                 }
+            }
+
+            if got_image {
+                let updated = build_metadata_json(&meta.data, &meta.raw, &[img1.clone()], &meta.pab_filename);
+                let _ = tokio::fs::write(
+                    meta.preset_dir.join(format!("{}.json", meta.preset.preset_id)),
+                    serde_json::to_string_pretty(&updated).unwrap_or_default(),
+                ).await;
+                let _ = tokio::fs::write(meta.preset_dir.join(".ok"), b"").await;
+                n_done += 1;
+                write_log(logs_dir, &format!("[SYNC ] Done: preset {}", meta.preset.preset_id)).await;
+                events::emit_progress(app, ScrapperProgress {
+                    preset_id: meta.preset.preset_id.to_string(),
+                    status: "done".to_string(),
+                    message: format!("Synced preset {}", meta.preset.preset_id),
+                    class_name: meta.preset.class_hint.clone(),
+                    current: img_current,
+                    total,
+                });
             }
         } else {
             let _ = tokio::fs::write(meta.preset_dir.join(".ok"), b"").await;
             n_done += 1;
-            write_log(logs_dir, &format!("{} Done (no images): preset {}", prefix, meta.preset.preset_id)).await;
+            write_log(logs_dir, &format!("[SYNC ] Done (no images): preset {}", meta.preset.preset_id)).await;
             events::emit_progress(app, ScrapperProgress {
                 preset_id: meta.preset.preset_id.to_string(),
                 status: "done".to_string(),
@@ -317,27 +344,27 @@ pub async fn run(
 
     events::emit_refresh_album(app);
 
-    events::emit_progress(app, ScrapperProgress {
-        preset_id: String::new(),
-        status: "phase2_start".to_string(),
-        message: String::new(),
-        class_name: String::new(),
-        current: 0,
-        total: 0,
-    });
-
-    // image_2 pass — silent best-effort after all image_1s are done
+    // image_2 pass — additional data, shows in progress strip
     let img2_list: Vec<&FetchedMeta> = fetched.iter()
         .filter(|m| m.image_2.is_some() && ok_exists(presets_dir, m.preset.preset_id))
         .collect();
+    let img2_total = img2_list.len();
 
-    if !img2_list.is_empty() {
-        write_log(logs_dir, &format!("{} Phase 2: downloading image_2 for {} preset(s)", prefix, img2_list.len())).await;
-        for meta in img2_list {
+    if img2_total > 0 {
+        write_log(logs_dir, &format!("[SYNC ] Phase 2: downloading image_2 for {} preset(s)", img2_total)).await;
+        for (idx, meta) in img2_list.into_iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 write_log(logs_dir, "[USER ] Sync cancelled").await;
                 break;
             }
+            events::emit_progress(app, ScrapperProgress {
+                preset_id: meta.preset.preset_id.to_string(),
+                status: "additional_data".to_string(),
+                message: format!("Additional data {}/{}", idx + 1, img2_total),
+                class_name: meta.preset.class_hint.clone(),
+                current: idx + 1,
+                total: img2_total,
+            });
             let img2 = meta.image_2.as_ref().unwrap();
             let url = format!(
                 "https://assets.garmoth.com/beauty-album/images/{}/{}",
@@ -352,7 +379,7 @@ pub async fn run(
                         meta.preset_dir.join(format!("{}.json", meta.preset.preset_id)),
                         serde_json::to_string_pretty(&updated).unwrap_or_default(),
                     ).await;
-                    write_log(logs_dir, &format!("{} Done image_2: preset {}", prefix, meta.preset.preset_id)).await;
+                    write_log(logs_dir, &format!("[SYNC ] Done image_2: preset {}", meta.preset.preset_id)).await;
                 }
                 Err(e) => {
                     write_log(logs_dir, &format!("[ERR  ] image_2 {} failed: {}", meta.preset.preset_id, e)).await;
@@ -364,11 +391,11 @@ pub async fn run(
 
     let n_err = fetch_errors.load(Ordering::Relaxed) + n_img_err;
     let msg = format!("Finished — {} done  {} error(s)", n_done, n_err);
-    write_log(logs_dir, &format!("{} {}", prefix, msg)).await;
+    write_log(logs_dir, &format!("[SYNC ] {}", msg)).await;
     Ok(msg)
 }
 
-async fn jitter_sleep() {
+pub async fn jitter_sleep() {
     let millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

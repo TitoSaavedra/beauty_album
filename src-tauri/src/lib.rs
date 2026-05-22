@@ -3,8 +3,9 @@ mod errors;
 mod services;
 mod state;
 
-use commands::album::{get_classes, get_presets, init_classes, inject_preset, open_file, open_logs};
+use commands::album::{get_classes, get_presets, init_classes, inject_preset, open_file, open_logs, open_url};
 use commands::config::{get_config, save_config};
+use commands::popular::{sync_popular, get_popular_classes, get_popular_presets, discard_preset, get_wanted, set_wanted};
 use commands::scrapper::{check_pending, run_scrapper, stop_scrapper};
 use services::{config_service, scrapper_service};
 use state::{AppState, ScrapperCancelToken};
@@ -31,11 +32,11 @@ pub fn run() {
                     let config = state.0.lock().unwrap();
                     let dirs = vec![
                         config.presets_dir(),
-                        config.test_dir(),
                         config.classes_dir(),
                         config.to_download_dir(),
                         config.logs_dir(),
                         config.customization_dir(),
+                        config.popular_dir(),
                     ];
                     for dir in dirs {
                         let _ = std::fs::create_dir_all(dir);
@@ -60,10 +61,17 @@ pub fn run() {
             save_config,
             inject_preset,
             open_file,
+            open_url,
             open_logs,
             run_scrapper,
             stop_scrapper,
-            check_pending
+            check_pending,
+            sync_popular,
+            get_popular_classes,
+            get_popular_presets,
+            discard_preset,
+            get_wanted,
+            set_wanted
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

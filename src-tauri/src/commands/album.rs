@@ -4,21 +4,15 @@ use crate::services::{album_service, class_service, playwright_service, scrapper
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn get_classes(use_test: bool, state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
+pub fn get_classes(state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
     let config = state.0.lock().map_err(|e| e.to_string())?;
-    let dir = if use_test { config.test_dir() } else { config.presets_dir() };
-    album_service::get_classes(&dir, &config.classes_dir()).map_err(|e| e.to_string())
+    album_service::get_classes(&config.presets_dir(), &config.classes_dir()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn get_presets(
-    class_name: String,
-    use_test: bool,
-    state: State<AppState>,
-) -> Result<Vec<serde_json::Value>, String> {
+pub fn get_presets(class_name: String, state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
     let config = state.0.lock().map_err(|e| e.to_string())?;
-    let dir = if use_test { config.test_dir() } else { config.presets_dir() };
-    album_service::get_presets(&dir, &class_name).map_err(|e| e.to_string())
+    album_service::get_presets(&config.presets_dir(), &class_name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -112,6 +106,20 @@ pub async fn init_classes(app: AppHandle, state: State<'_, AppState>) -> Result<
     class_service::init(&classes_dir, &logs_dir, &app, &browser)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .creation_flags(0x08000000)
+            .args(["/c", "start", "", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

@@ -78,6 +78,7 @@ All app directories are created automatically and derived from this single path:
 | Directory | Path |
 |---|---|
 | Preset archive | `<bdo_docs_dir>/Beauty Album/Presets/` |
+| Popular presets | `<bdo_docs_dir>/Beauty Album/Popular/` |
 | Customization output | `<bdo_docs_dir>/Customization/` |
 | Preset input (drop zone) | `<bdo_docs_dir>/Beauty Album/to_download/` |
 | Class data | `<bdo_docs_dir>/Beauty Album/Classes/` |
@@ -95,13 +96,17 @@ Config is saved to `%APPDATA%\com.bdo.beauty-album\config.json`.
 2. **Image phase** — `image_1` for each preset is downloaded sequentially through a headless Chromium session (bypasses Cloudflare fingerprinting). Cards flip from skeleton to real thumbnail as each image arrives.
 3. **image_2 pass** — after all `image_1` downloads complete, a silent background pass fetches secondary images without updating the progress bar.
 
+**Popular presets sync** — fetches the most-wanted presets from Garmoth across all time windows (`20d → ever`) for every class. Two-phase deduplication: first a global `class=all` pass across all 7 windows in parallel, then per-class passes for the 3 longest windows. Already-synced presets are skipped; images are copied from the local archive when available, downloaded through Chromium otherwise. Discarded presets are marked with a `.discard` sentinel and hidden from the UI.
+
+**Wanted list** — users can mark popular presets as "wanted". The list is persisted to `wanted.json` next to the app config and survives restarts. Wanted presets are highlighted in the Popular tab and can be downloaded directly from there.
+
 **Class initialization** — on first launch, Rust downloads Garmoth's JS bundle through Chromium, parses all class definitions, and downloads class icons. This runs once and is skipped on subsequent launches.
 
 **Directory watcher** — polls the input directory every 20 seconds for new `.pab` files and starts the sync automatically when files appear.
 
 **Cloudflare bypass** — all asset and API requests that require browser-level TLS fingerprinting go through playwright-rs (Chromium with BoringSSL). Plain `reqwest` is used only for the Garmoth JSON API where fingerprinting is not enforced.
 
-All events are logged to `tauri.log` in the Logs directory with structured `[TAG ]` prefixes (`[SYNC ]`, `[META ]`, `[CLASS]`, `[WATCH]`, `[USER ]`, `[ERR  ]`). Open from Settings → Open Logs.
+All events are logged to `tauri.log` in the Logs directory with structured `[TAG ]` prefixes (`[SYNC ]`, `[META ]`, `[CLASS]`, `[POP  ]`, `[WATCH]`, `[USER ]`, `[ERR  ]`). Open from Settings → Open Logs.
 
 ---
 
