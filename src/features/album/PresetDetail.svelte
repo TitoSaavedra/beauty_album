@@ -3,7 +3,8 @@
   import { presetDetail } from '../../stores/presetDetail';
   import { confirmDialog } from '../../stores/confirmDialog';
   import { toast } from '../../stores/toast';
-  import { injectPreset } from '../../tauri/album';
+  import { wantedPresets } from '../../stores/wantedPresets';
+  import { injectPreset, discardPreset, openUrl } from '../../tauri/album';
 
   $: preset = $presetDetail;
   $: images = preset?.image_paths?.map(p => convertFileSrc(p)) ?? [];
@@ -18,7 +19,13 @@
   $: downloads = preset?.downloads ?? 0;
   $: views     = preset?.views     ?? 0;
   $: favorites = preset?.favorites ?? 0;
-  $: className = (preset as any)?.class ?? '';
+  $: className = (preset as any)?.class_display ?? '';
+  $: isPopular = !!(preset as any)?.is_popular;
+  $: isDownloaded = !!(preset as any)?.is_downloaded;
+  $: isWanted = isPopular && $wantedPresets.has(id);
+  $: syncedAt  = preset?.updated_at
+      ? new Date(preset.updated_at * 1000).toLocaleDateString('en-CA')
+      : null;
 
   function close() { presetDetail.set(null); }
 
@@ -36,6 +43,23 @@
         await injectPreset(preset!.download_path!);
         presetDetail.set(null);
         toast.show('Preset injected successfully');
+      },
+    });
+  }
+
+  function openOnGarmoth() {
+    openUrl(`https://garmoth.com/beauty-album/preset/${id}`);
+  }
+
+  function discard() {
+    const presetId = id;
+    confirmDialog.show({
+      title: 'Discard Preset',
+      text: 'This preset will be hidden from your popular list.',
+      confirmLabel: 'Discard',
+      onConfirm: async () => {
+        presetDetail.set(null);
+        try { await discardPreset(presetId); } catch { /* non-fatal */ }
       },
     });
   }
@@ -104,6 +128,12 @@
               <span class="meta-label">Upload Date</span>
               <span class="meta-value">{date}</span>
             </div>
+            {#if syncedAt}
+              <div class="meta-row">
+                <span class="meta-label">Synced</span>
+                <span class="meta-value">{syncedAt}</span>
+              </div>
+            {/if}
           </div>
 
           <div class="stats-grid">
@@ -123,7 +153,21 @@
         </div>
 
         <div class="download-area">
-          {#if preset.download_path}
+          {#if isPopular && !isDownloaded}
+            <button
+              class="btn-download btn-want"
+              class:btn-want-active={isWanted}
+              on:click={() => wantedPresets.toggle(id)}
+            >
+              {isWanted ? '★ Marked to Download' : '⬇ Mark to Download'}
+            </button>
+            <button class="btn-discard" on:click={discard}>✕ Discard</button>
+          {/if}
+          {#if isPopular}
+            <button class="btn-download btn-garmoth bdo-gold-gradient" on:click={openOnGarmoth}>
+              Open on Garmoth.com
+            </button>
+          {:else if preset.download_path}
             <button class="btn-download bdo-gold-gradient" on:click={inject}>
               Inject Local Parameters
             </button>
@@ -338,6 +382,9 @@
     margin-top: 32px;
     border-top: 1px solid #1a232c;
     padding-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .btn-download {
@@ -364,4 +411,35 @@
     font-style: italic;
     letter-spacing: 0.05em;
   }
+
+  .btn-want {
+    background: rgba(255, 204, 77, 0.06);
+    border: 1px solid rgba(255, 204, 77, 0.2);
+    color: #94a3b8;
+  }
+
+  .btn-want:hover { filter: brightness(1.1); }
+
+  .btn-want.btn-want-active {
+    background: rgba(255, 204, 77, 0.14);
+    border-color: rgba(255, 204, 77, 0.45);
+    color: #ffcc4d;
+  }
+
+  .btn-discard {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid rgba(220, 60, 60, 0.2);
+    border-radius: 6px;
+    background: rgba(220, 60, 60, 0.06);
+    color: #f87171;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: filter 0.2s;
+  }
+
+  .btn-discard:hover { filter: brightness(1.15); }
 </style>

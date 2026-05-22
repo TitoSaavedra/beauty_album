@@ -68,4 +68,27 @@ impl GarmothClient {
             .map_err(|e| AppError::Scrape(format!("API parse failed: {}", e)))?;
         Ok((typed, raw))
     }
+
+    pub async fn fetch_popular(&self, class_id: Option<u32>, days: &str) -> Result<Vec<serde_json::Value>, AppError> {
+        let class_param = class_id.map_or_else(|| "all".to_string(), |id| id.to_string());
+        let url = format!(
+            "{}/api/beauty-album/search-advanced?class={}&past={}&region=all&sort=popular&limit=100",
+            API_BASE, class_param, days
+        );
+        let bytes = self.api_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| AppError::Scrape(format!("Popular API request failed: {}", e)))?
+            .error_for_status()
+            .map_err(|e| AppError::Scrape(format!("Popular API error status: {}", e)))?
+            .bytes()
+            .await
+            .map_err(|e| AppError::Scrape(format!("Popular API read failed: {}", e)))?;
+        let val: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|e| AppError::Scrape(format!("Popular API parse failed: {}", e)))?;
+        // Response shape: { "presets": { "data": [...] } } or bare array
+        let arr = val["presets"]["data"].as_array().cloned().unwrap_or_default();
+        Ok(arr)
+    }
 }

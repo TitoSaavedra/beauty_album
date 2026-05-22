@@ -27,12 +27,16 @@ impl AppConfig {
         PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Logs")
     }
 
-    pub fn test_dir(&self) -> PathBuf {
-        PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Test")
-    }
-
     pub fn classes_dir(&self) -> PathBuf {
         PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Classes")
+    }
+
+    pub fn popular_dir(&self) -> PathBuf {
+        PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("Popular")
+    }
+
+    pub fn wanted_path(&self) -> PathBuf {
+        PathBuf::from(&self.bdo_docs_dir).join("Beauty Album").join("wanted.json")
     }
 }
 

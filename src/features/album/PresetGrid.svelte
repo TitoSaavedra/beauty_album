@@ -2,12 +2,65 @@
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import type { PresetEntry } from '../../tauri/album';
+  import { wantedPresets } from '../../stores/wantedPresets';
+  import { discardPreset } from '../../tauri/album';
   import PresetCard from './PresetCard.svelte';
 
   export let presets: PresetEntry[] = [];
   export let selectedClass: string | null = null;
   export let loading = false;
   export let error = '';
+  export let isPopular = false;
+  export let filterShowDownloaded = true;
+  export let filterSortBy: 'downloads' | 'views' | 'favorites' = 'downloads';
+  export let searchQuery = '';
+
+  let discarded = new Set<string>();
+
+  $: localPresets = (() => {
+    let list = [...presets];
+
+    if (!filterShowDownloaded) {
+      list = list.filter(p => !p.is_downloaded);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(p =>
+        (p.title ?? p.name ?? '').toLowerCase().includes(q) ||
+        (p.creator ?? '').toLowerCase().includes(q)
+      );
+    }
+
+    if (isPopular) {
+      list = list.filter(p => !discarded.has(p.preset_id ?? ''));
+      list.sort((a, b) => {
+        const aDown = !!a.is_downloaded, bDown = !!b.is_downloaded;
+        if (aDown !== bDown) return aDown ? -1 : 1;
+        const aWanted = $wantedPresets.has(a.preset_id ?? '');
+        const bWanted = $wantedPresets.has(b.preset_id ?? '');
+        if (aWanted !== bWanted) return aWanted ? -1 : 1;
+        return ((b as any)[filterSortBy] ?? 0) - ((a as any)[filterSortBy] ?? 0);
+      });
+    } else {
+      list.sort((a, b) => ((b as any)[filterSortBy] ?? 0) - ((a as any)[filterSortBy] ?? 0));
+    }
+
+    return list;
+  })();
+
+  // Reset discarded when the class/preset list changes entirely
+  $: if (presets) discarded = new Set<string>();
+
+  async function handleDiscard(e: CustomEvent<string>) {
+    const id = e.detail;
+    discarded = new Set([...discarded, id]);
+    try {
+      await discardPreset(id);
+    } catch {
+      // non-fatal
+    }
+  }
 </script>
 
 {#if !selectedClass}
@@ -22,15 +75,15 @@
   <div class="state-msg">
     <div class="state-hint error">{error}</div>
   </div>
-{:else if presets.length === 0}
+{:else if localPresets.length === 0}
   <div class="state-msg">
     <div class="state-hint">No presets found in this class</div>
   </div>
 {:else}
   <div class="grid">
-    {#each presets as preset, i (preset.preset_id ?? i)}
+    {#each localPresets as preset, i (preset.preset_id ?? i)}
       <div in:fly={{ y: 28, duration: 350, delay: Math.min(i * 30, 600), easing: cubicOut }}>
-        <PresetCard {preset} />
+        <PresetCard {preset} {selectedClass} on:discard={handleDiscard} />
       </div>
     {/each}
   </div>

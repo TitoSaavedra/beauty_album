@@ -7,22 +7,19 @@ use crate::state::{AppState, ScrapperCancelToken};
 #[tauri::command]
 pub async fn run_scrapper(
     app: AppHandle,
-    dev_mode: bool,
     state: State<'_, AppState>,
     cancel: State<'_, ScrapperCancelToken>,
 ) -> Result<String, String> {
     cancel.0.store(false, Ordering::Relaxed);
 
-    let (input_dir, presets_dir, logs_dir) = {
+    let (input_dir, presets_dir, popular_dir, logs_dir) = {
         let config = state.0.lock().map_err(|e| e.to_string())?;
-        let out = if dev_mode { config.test_dir() } else { config.presets_dir() };
-        (config.to_download_dir(), out, config.logs_dir())
+        (config.to_download_dir(), config.presets_dir(), config.popular_dir(), config.logs_dir())
     };
 
-    let log_prefix = if dev_mode { "[DEV  ]" } else { "[USER ]" };
-    scrapper_service::write_log(&logs_dir, &format!("{} Sync requested", log_prefix)).await;
+    scrapper_service::write_log(&logs_dir, "[USER ] Sync requested").await;
 
-    scrapper_service::run(&app, &input_dir, &presets_dir, &logs_dir, cancel.0.clone(), dev_mode)
+    scrapper_service::run(&app, &input_dir, &presets_dir, &popular_dir, &logs_dir, cancel.0.clone())
         .await
         .map_err(|e| e.to_string())
 }

@@ -12,9 +12,13 @@ export interface PresetEntry {
     preset_id?: string;
     downloads?: number;
     favorites?: number;
+    likes?: number;
     views?: number;
     creator?: string;
     date?: string;
+    updated_at?: number;
+    is_downloaded?: boolean;
+    is_popular?: boolean;
     image_paths: string[];
     download_path: string | null;
     [key: string]: unknown;
@@ -25,11 +29,11 @@ export interface AppConfig {
     cf_clearance: string;
 }
 
-export const getClasses = (useTest = false): Promise<ClassEntry[]> =>
-    invoke('get_classes', { useTest });
+export const getClasses = (): Promise<ClassEntry[]> =>
+    invoke('get_classes');
 
-export const getPresets = (className: string, useTest = false): Promise<PresetEntry[]> =>
-    invoke('get_presets', { className, useTest });
+export const getPresets = (className: string): Promise<PresetEntry[]> =>
+    invoke('get_presets', { className });
 
 export const getConfig = (): Promise<AppConfig> =>
     invoke('get_config');
@@ -43,8 +47,8 @@ export const injectPreset = (downloadPath: string): Promise<void> =>
 export const openFile = (path: string): Promise<void> =>
     invoke('open_file', { path });
 
-export const runScrapper = (devMode = false): Promise<string> =>
-    invoke('run_scrapper', { devMode });
+export const runScrapper = (): Promise<string> =>
+    invoke('run_scrapper');
 
 export const stopScrapper = (): Promise<void> =>
     invoke('stop_scrapper');
@@ -57,4 +61,25 @@ export const openLogs = (): Promise<void> =>
 
 export const initClasses = (): Promise<void> =>
     invoke('init_classes');
+
+export const syncPopular = (): Promise<string> =>
+    invoke('sync_popular');
+
+export const getPopularClasses = (): Promise<ClassEntry[]> =>
+    invoke('get_popular_classes');
+
+export const getPopularPresets = (className: string): Promise<PresetEntry[]> =>
+    invoke('get_popular_presets', { className });
+
+export const openUrl = (url: string): Promise<void> =>
+    invoke('open_url', { url });
+
+export const discardPreset = (presetId: string): Promise<void> =>
+    invoke('discard_preset', { presetId });
+
+export const getWanted = (): Promise<string[]> =>
+    invoke('get_wanted');
+
+export const setWanted = (ids: string[]): Promise<void> =>
+    invoke('set_wanted', { ids });
 
