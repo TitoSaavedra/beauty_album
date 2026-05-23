@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { fly, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
-  import { convertFileSrc } from '@tauri-apps/api/core';
   import type { ClassEntry } from '../../tauri/album';
+  import { getClassFavorites, setClassFavorite } from '../../tauri/album';
 
   export let classes: ClassEntry[] = [];
   export let selectedClass: string | null = null;
@@ -18,20 +18,23 @@
     searchChange: string;
   }>();
 
-  const FAVORITES_KEY = 'beauty_album_favorites';
-  let favorites: Set<string> = new Set(
-    JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]')
-  );
+  let favorites: Set<string> = new Set();
 
-  function toggleFavorite(name: string, e: MouseEvent) {
+  onMount(async () => {
+    try {
+      const favs = await getClassFavorites();
+      favorites = new Set(favs);
+    } catch { /* ignore on first launch */ }
+  });
+
+  async function toggleFavorite(name: string, e: MouseEvent) {
     e.stopPropagation();
-    if (favorites.has(name)) {
-      favorites.delete(name);
-    } else {
-      favorites.add(name);
-    }
+    const isFav = favorites.has(name);
+    if (isFav) { favorites.delete(name); } else { favorites.add(name); }
     favorites = new Set(favorites);
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites]));
+    try {
+      await setClassFavorite(name, !isFav);
+    } catch { /* non-fatal */ }
   }
 
   let search = '';
@@ -68,9 +71,6 @@
     dispatch('filterChange', { showDownloaded: localShowDownloaded, sortBy: localSortBy });
   }
 
-  function onIconError(e: Event) {
-    (e.currentTarget as HTMLElement).style.display = 'none';
-  }
 </script>
 
 <div class="search-box">
@@ -170,13 +170,8 @@
               on:click={(e) => toggleFavorite(cls.name, e)}
               title="Pin to top"
             >♥</span>
-            {#if cls.icon_path}
-              <img
-                src={convertFileSrc(cls.icon_path)}
-                alt=""
-                class="cls-icon"
-                on:error={onIconError}
-              />
+            {#if cls.icon_svg}
+              <span class="cls-icon">{@html cls.icon_svg}</span>
             {/if}
           </div>
         </button>
@@ -464,13 +459,21 @@
   .cls-icon {
     width: 20px;
     height: 20px;
-    object-fit: contain;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: #0a0d12;
     padding: 2px;
     border-radius: 3px;
     border: 1px solid #1a232c;
     flex-shrink: 0;
     transition: border-color 0.2s;
+    overflow: hidden;
+  }
+
+  .cls-icon :global(svg) {
+    width: 100%;
+    height: 100%;
   }
 
   .class-btn:hover .cls-icon,

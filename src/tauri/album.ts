@@ -2,8 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 
 export interface ClassEntry {
     name: string;
-    icon_path: string | null;
+    icon_svg?: string | null;
     preset_count: number;
+    is_favorite?: boolean;
 }
 
 export interface PresetEntry {
@@ -19,6 +20,7 @@ export interface PresetEntry {
     updated_at?: number;
     is_downloaded?: boolean;
     is_popular?: boolean;
+    is_wanted?: boolean;
     image_paths: string[];
     download_path: string | null;
     [key: string]: unknown;
@@ -32,8 +34,13 @@ export interface AppConfig {
 export const getClasses = (): Promise<ClassEntry[]> =>
     invoke('get_classes');
 
-export const getPresets = (className: string): Promise<PresetEntry[]> =>
-    invoke('get_presets', { className });
+export const getPresets = (
+    className: string,
+    offset = 0,
+    limit = 50,
+    sortBy = 'downloads',
+): Promise<PresetEntry[]> =>
+    invoke('get_presets', { className, offset, limit, sortBy });
 
 export const getConfig = (): Promise<AppConfig> =>
     invoke('get_config');
@@ -56,11 +63,14 @@ export const stopScrapper = (): Promise<void> =>
 export const checkPending = (): Promise<number> =>
     invoke('check_pending');
 
+export const checkPendingImage2 = (): Promise<number> =>
+    invoke('check_pending_image2');
+
+export const isDbReady = (): Promise<boolean> =>
+    invoke('is_db_ready');
+
 export const openLogs = (): Promise<void> =>
     invoke('open_logs');
-
-export const initClasses = (): Promise<void> =>
-    invoke('init_classes');
 
 export const syncPopular = (): Promise<string> =>
     invoke('sync_popular');
@@ -68,8 +78,13 @@ export const syncPopular = (): Promise<string> =>
 export const getPopularClasses = (): Promise<ClassEntry[]> =>
     invoke('get_popular_classes');
 
-export const getPopularPresets = (className: string): Promise<PresetEntry[]> =>
-    invoke('get_popular_presets', { className });
+export const getPopularPresets = (
+    className: string,
+    offset = 0,
+    limit = 50,
+    sortBy = 'downloads',
+): Promise<PresetEntry[]> =>
+    invoke('get_popular_presets', { className, offset, limit, sortBy });
 
 export const openUrl = (url: string): Promise<void> =>
     invoke('open_url', { url });
@@ -83,3 +98,37 @@ export const getWanted = (): Promise<string[]> =>
 export const setWanted = (ids: string[]): Promise<void> =>
     invoke('set_wanted', { ids });
 
+export const toggleWanted = (presetId: string): Promise<boolean> =>
+    invoke('toggle_wanted', { presetId });
+
+export const getClassFavorites = (): Promise<string[]> =>
+    invoke('get_class_favorites');
+
+export const setClassFavorite = (className: string, isFavorite: boolean): Promise<void> =>
+    invoke('set_class_favorite', { className, isFavorite });
+
+export interface LogEntry {
+    id: number;
+    ts: number;
+    tag: string;
+    source: string;
+    msg: string;
+}
+
+export interface LogStats {
+    total: number;
+    errors: number;
+    by_source: { source: string; count: number }[];
+    by_tag: { tag: string; count: number }[];
+}
+
+export const getLogs = (
+    tag?: string,
+    source?: string,
+    limit = 100,
+    offset = 0,
+): Promise<LogEntry[]> =>
+    invoke('get_logs', { tag, source, limit, offset });
+
+export const getLogStats = (): Promise<LogStats> =>
+    invoke('get_log_stats');

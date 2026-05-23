@@ -87,7 +87,6 @@ impl GarmothClient {
             .map_err(|e| AppError::Scrape(format!("Popular API read failed: {}", e)))?;
         let val: serde_json::Value = serde_json::from_slice(&bytes)
             .map_err(|e| AppError::Scrape(format!("Popular API parse failed: {}", e)))?;
-        // Response shape: { "presets": { "data": [...] } } or bare array
         let arr = val["presets"]["data"].as_array().cloned().unwrap_or_default();
         Ok(arr)
     }

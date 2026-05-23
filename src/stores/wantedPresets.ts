@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { getWanted, setWanted } from '../tauri/album';
+import { getWanted, toggleWanted } from '../tauri/album';
 
 function createWantedStore() {
   const { subscribe, set, update } = writable<Set<string>>(new Set());
@@ -12,13 +12,15 @@ function createWantedStore() {
         set(new Set(ids));
       } catch { /* ignore on first launch */ }
     },
-    toggle(id: string) {
-      update(s => {
-        const next = new Set(s);
-        next.has(id) ? next.delete(id) : next.add(id);
-        setWanted([...next]);
-        return next;
-      });
+    async toggle(id: string) {
+      try {
+        const isWanted = await toggleWanted(id);
+        update(s => {
+          const next = new Set(s);
+          if (isWanted) { next.add(id); } else { next.delete(id); }
+          return next;
+        });
+      } catch { /* non-fatal */ }
     },
   };
 }

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
-  import { saveConfig, openLogs } from '../tauri/album';
+  import { saveConfig } from '../tauri/album';
   import type { AppConfig } from '../tauri/album';
+  import { logViewerOpen } from '../stores/logViewer';
 
   export let config: AppConfig;
 
@@ -14,10 +15,10 @@
 
   $: previewPaths = bdo_docs_dir.trim()
     ? [
-        { label: 'Presets', path: bdo_docs_dir.trim() + '\\Beauty Album\\Presets' },
-        { label: 'Customization', path: bdo_docs_dir.trim() + '\\Customization' },
-        { label: 'Input', path: bdo_docs_dir.trim() + '\\Beauty Album\\to_download' },
-        { label: 'Logs', path: bdo_docs_dir.trim() + '\\Beauty Album\\Logs' },
+        { label: 'Database', path: bdo_docs_dir.trim() + '\\DB' },
+        { label: 'Presets', path: bdo_docs_dir.trim() + '\\Presets' },
+        { label: 'Input', path: bdo_docs_dir.trim() + '\\to_download' },
+        { label: 'Apply', path: bdo_docs_dir.trim() + '\\Customization' },
       ]
     : [];
 
@@ -88,7 +89,7 @@
     {/if}
 
     <div class="actions">
-      <button class="btn-cancel" on:click={() => openLogs().catch(() => {})}>Open Logs</button>
+      <button class="btn-cancel" on:click={() => { logViewerOpen.set(true); close(); }}>Open Logs</button>
       <button class="btn-cancel" on:click={close}>Cancel</button>
       <button class="btn-gold" on:click={save} disabled={saving}>
         {saving ? 'Saving…' : 'Save'}

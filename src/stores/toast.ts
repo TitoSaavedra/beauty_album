@@ -3,7 +3,7 @@ import { writable } from 'svelte/store';
 export interface ToastMessage {
     id: number;
     text: string;
-    type: 'success' | 'error';
+    type: 'success' | 'warning' | 'error';
     onClick?: () => void;
 }
 

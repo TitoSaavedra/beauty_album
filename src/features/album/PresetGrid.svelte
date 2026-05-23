@@ -2,7 +2,6 @@
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import type { PresetEntry } from '../../tauri/album';
-  import { wantedPresets } from '../../stores/wantedPresets';
   import { discardPreset } from '../../tauri/album';
   import PresetCard from './PresetCard.svelte';
 
@@ -12,8 +11,9 @@
   export let error = '';
   export let isPopular = false;
   export let filterShowDownloaded = true;
-  export let filterSortBy: 'downloads' | 'views' | 'favorites' = 'downloads';
   export let searchQuery = '';
+  export let hasMore = false;
+  export let loadingMore = false;
 
   let discarded = new Set<string>();
 
@@ -34,22 +34,12 @@
 
     if (isPopular) {
       list = list.filter(p => !discarded.has(p.preset_id ?? ''));
-      list.sort((a, b) => {
-        const aDown = !!a.is_downloaded, bDown = !!b.is_downloaded;
-        if (aDown !== bDown) return aDown ? -1 : 1;
-        const aWanted = $wantedPresets.has(a.preset_id ?? '');
-        const bWanted = $wantedPresets.has(b.preset_id ?? '');
-        if (aWanted !== bWanted) return aWanted ? -1 : 1;
-        return ((b as any)[filterSortBy] ?? 0) - ((a as any)[filterSortBy] ?? 0);
-      });
-    } else {
-      list.sort((a, b) => ((b as any)[filterSortBy] ?? 0) - ((a as any)[filterSortBy] ?? 0));
+      list.sort((a, b) => (b.is_downloaded ? 1 : 0) - (a.is_downloaded ? 1 : 0));
     }
 
     return list;
   })();
 
-  // Reset discarded when the class/preset list changes entirely
   $: if (presets) discarded = new Set<string>();
 
   async function handleDiscard(e: CustomEvent<string>) {
@@ -68,8 +58,10 @@
     <div class="state-hint">Select a class to browse presets</div>
   </div>
 {:else if loading}
-  <div class="state-msg">
-    <div class="state-hint loading">Loading presets...</div>
+  <div class="grid">
+    {#each Array.from({length: 12}) as _, i}
+      <div class="skel-card" style="animation-delay: {i * 50}ms"></div>
+    {/each}
   </div>
 {:else if error}
   <div class="state-msg">
@@ -82,10 +74,15 @@
 {:else}
   <div class="grid">
     {#each localPresets as preset, i (preset.preset_id ?? i)}
-      <div in:fly={{ y: 28, duration: 350, delay: Math.min(i * 30, 600), easing: cubicOut }}>
+      <div in:fly={{ y: 20, duration: 220, easing: cubicOut }}>
         <PresetCard {preset} {selectedClass} on:discard={handleDiscard} />
       </div>
     {/each}
+    {#if loadingMore}
+      {#each Array.from({length: 6}) as _, i}
+        <div class="skel-card" style="animation-delay: {i * 60}ms"></div>
+      {/each}
+    {/if}
   </div>
 {/if}
 
@@ -121,5 +118,19 @@
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 24px;
     align-content: start;
+  }
+
+  .skel-card {
+    aspect-ratio: 4 / 5;
+    border-radius: 8px;
+    border: 1px solid #1a232c;
+    background: linear-gradient(90deg, #0d1219 25%, #141c25 50%, #0d1219 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 </style>

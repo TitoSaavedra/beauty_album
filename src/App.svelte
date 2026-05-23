@@ -9,10 +9,12 @@
   import SettingsModal from './components/SettingsModal.svelte';
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import ToastContainer from './components/ToastContainer.svelte';
+  import LogViewer from './features/logs/LogViewer.svelte';
   import { appConfig } from './stores/appConfig';
   import { toast } from './stores/toast';
   import { presetDetail } from './stores/presetDetail';
   import { wantedPresets } from './stores/wantedPresets';
+  import { logViewerOpen } from './stores/logViewer';
 
   interface ScrapperProgress {
     preset_id: string;
@@ -38,10 +40,6 @@
   let loadingPresets = false;
   let classesError = '';
   let presetsError = '';
-  let classInitVisible = false;
-  let classInitCurrent = 0;
-  let classInitTotal = 0;
-  let classInitName = '';
   let viewMode: 'presets' | 'popular' = 'presets';
   let popularRunning = false;
   let popularCurrent = 0;
@@ -52,14 +50,59 @@
   let filterSortBy: 'downloads' | 'views' | 'favorites' = 'downloads';
   let searchQuery = '';
   let appLoading = true;
+  let appError = '';
+  let initStatus = 'Initializing...';
+
+  const PAGE_SIZE = 50;
+  let presetOffset = 0;
+  let hasMore = false;
+  let loadingMore = false;
+
+  async function runQueues() {
+    initStatus = 'Checking to_download...';
+    const pending = await api.checkPending();
+
+    initStatus = 'Checking image_2 queue...';
+    const pendingImg2 = await api.checkPendingImage2();
+
+    if (pending > 0 || pendingImg2 > 0) {
+      initStatus = `Starting sync (${pending} presets, ${pendingImg2} images)...`;
+      await startScraper();
+    }
+
+    initStatus = 'Checking popular queue...';
+    await startPopularSync();
+  }
+
+  async function onDbReady(ok: boolean) {
+    if (!ok) {
+      appError = 'Database failed to open. Check logs.';
+      appLoading = false;
+      return;
+    }
+    if (config.bdo_docs_dir) {
+      await wantedPresets.load();
+      initStatus = 'Loading classes...';
+      await loadClasses();
+      await runQueues();
+      appLoading = false;
+    } else {
+      appLoading = false;
+      settingsOpen = true;
+    }
+  }
 
   onMount(async () => {
+    await listen<boolean>('db_ready', ({ payload: ok }) => onDbReady(ok));
+
+    listen<string>('init_progress', ({ payload }) => { initStatus = payload; });
+
     listen('refresh_album', () => {
       if (config.bdo_docs_dir) loadClasses(true);
     });
 
     listen<ScrapperProgress>('popular_progress', ({ payload }) => {
-      if (payload.total > 0) popularTotal = payload.total;
+      if (payload.total > 0 && popularTotal === 0) popularTotal = payload.total;
       if (payload.current > 0) popularCurrent = payload.current;
       if (payload.message) popularMsg = payload.message;
       if (payload.status === 'metadata' || payload.status === 'done') {
@@ -70,14 +113,6 @@
       }
     });
 
-    listen<{ current: number; total: number; class_name: string }>('class_init_progress', ({ payload }) => {
-      classInitVisible = true;
-      classInitCurrent = payload.current;
-      classInitTotal = payload.total;
-      classInitName = payload.class_name;
-      toast.show(`Class ready: ${payload.class_name}`, 'success', 2000);
-    });
-
     listen<string[]>('folder_changed', ({ payload: files }) => {
       const label = files.length === 1 ? files[0] : `${files.length} new presets`;
       toast.show(`New preset found: ${label}`, 'success', 4000);
@@ -85,36 +120,58 @@
     });
 
     try {
+      initStatus = 'Loading configuration...';
       config = await api.getConfig();
       appConfig.set(config);
-      if (config.bdo_docs_dir) {
-        try { await api.initClasses(); } finally { classInitVisible = false; }
-        await wantedPresets.load();
-        await loadClasses();
-        appLoading = false;
-        const pending = await api.checkPending();
-        if (pending > 0) await startScraper();
-        await startPopularSync();
-      } else {
+      if (!config.bdo_docs_dir) {
         appLoading = false;
         settingsOpen = true;
+      } else {
+        initStatus = 'Opening database...';
+        if (await api.isDbReady()) {
+          // Event fired before listener registered — handle now.
+          await onDbReady(true);
+        }
+        // Otherwise stay in skeleton; db_ready listener above handles the rest.
       }
-    } catch { appLoading = false; /* config not yet saved */ }
+    } catch { appLoading = false; }
   });
 
   async function selectClass(name: string) {
     selectedClass = name;
     presets = [];
     presetsError = '';
+    presetOffset = 0;
+    hasMore = false;
     loadingPresets = true;
     try {
-      presets = viewMode === 'popular'
-        ? await api.getPopularPresets(name)
-        : await api.getPresets(name);
+      const results = viewMode === 'popular'
+        ? await api.getPopularPresets(name, 0, PAGE_SIZE, filterSortBy)
+        : await api.getPresets(name, 0, PAGE_SIZE, filterSortBy);
+      presets = results;
+      hasMore = results.length === PAGE_SIZE;
     } catch (err) {
       presetsError = String(err);
     } finally {
       loadingPresets = false;
+    }
+  }
+
+  async function loadMore() {
+    if (loadingMore || !hasMore || !selectedClass) return;
+    loadingMore = true;
+    const nextOffset = presetOffset + PAGE_SIZE;
+    try {
+      const results = viewMode === 'popular'
+        ? await api.getPopularPresets(selectedClass, nextOffset, PAGE_SIZE, filterSortBy)
+        : await api.getPresets(selectedClass, nextOffset, PAGE_SIZE, filterSortBy);
+      presets = [...presets, ...results];
+      presetOffset = nextOffset;
+      hasMore = results.length === PAGE_SIZE;
+    } catch (err) {
+      presetsError = String(err);
+    } finally {
+      loadingMore = false;
     }
   }
 
@@ -139,11 +196,7 @@
         : classes[0]?.name;
       if (!target) return;
       if (keepSelected && target === prev) {
-        try {
-          presets = viewMode === 'popular'
-            ? await api.getPopularPresets(target)
-            : await api.getPresets(target, false);
-        } catch (err) { presetsError = String(err); }
+        // class counts already updated above — don't reset presets during background sync
       } else {
         await selectClass(target);
       }
@@ -160,7 +213,20 @@
     settingsOpen = false;
     selectedClass = null;
     presets = [];
-    if (config.bdo_docs_dir) await loadClasses();
+    if (!config.bdo_docs_dir) return;
+    if (await api.isDbReady()) {
+      // DB already open — reload immediately (subsequent settings saves).
+      appLoading = true;
+      initStatus = 'Reloading...';
+      await wantedPresets.load();
+      await loadClasses();
+      await runQueues();
+      appLoading = false;
+    } else {
+      // First-time setup — Rust will open DB and emit db_ready; listener handles the rest.
+      appLoading = true;
+      initStatus = 'Opening database...';
+    }
   }
 
   function handleSelectClass(e: CustomEvent<string>) {
@@ -255,12 +321,10 @@
     }
   }
 
-  $: stripPhase = classInitVisible ? 'init'
-    : popularRunning ? (popularPhase === 'images' ? 'popular-images' : 'popular')
+  $: stripPhase = popularRunning ? (popularPhase === 'images' ? 'popular-images' : 'popular')
     : scrapperPhase;
 
   $: stripLabel = (() => {
-    if (classInitVisible) return `${classInitCurrent}/${classInitTotal} — ${classInitName}`;
     if (popularRunning) {
       const prefix = popularTotal > 0 ? `${popularCurrent}/${popularTotal} — ` : '';
       const phase = popularPhase === 'images' ? 'Downloading Popular Images' : 'Syncing Popular';
@@ -320,11 +384,12 @@
       <button class="btn-mode" class:btn-mode-active={viewMode === 'popular'} on:click={toggleMode}>
         {viewMode === 'popular' ? 'Popular' : 'Presets'}
       </button>
+      <button class="btn-logs" on:click={() => logViewerOpen.set(true)} title="Logs">≡</button>
       <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
     </div>
   </nav>
 
-  {#if scrapperRunning || scrapperMsg || classInitVisible || popularRunning}
+  {#if scrapperRunning || scrapperMsg || popularRunning}
     <div
       class="scrapper-strip"
       class:has-error={!!scrapperError}
@@ -332,19 +397,20 @@
     >
       <div
         class="scrapper-fill"
-        style="width: {classInitVisible
-          ? (classInitTotal > 0 ? Math.round((classInitCurrent / classInitTotal) * 100) : 0)
-          : popularRunning
-            ? (popularTotal > 0 ? Math.round((popularCurrent / popularTotal) * 100) : 0)
-            : (scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0)}%"
+        style="width: {popularRunning
+          ? (popularTotal > 0 ? Math.round((popularCurrent / popularTotal) * 100) : 0)
+          : (scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0)}%"
       ></div>
       <span class="scrapper-label">{stripLabel}</span>
     </div>
   {/if}
 
   <div class="main-layout">
-    {#if appLoading || classInitVisible}
+    {#if appLoading || appError}
       <div class="app-skeleton">
+        {#if appError}
+          <div class="app-init-error">{appError}</div>
+        {/if}
         <!-- sidebar skeleton -->
         <div class="skel-sidebar">
           <div class="skel-search"></div>
@@ -369,12 +435,23 @@
           {filterShowDownloaded}
           {filterSortBy}
           on:select={handleSelectClass}
-          on:filterChange={e => { filterShowDownloaded = e.detail.showDownloaded; filterSortBy = e.detail.sortBy; }}
+          on:filterChange={e => {
+            const prevSortBy = filterSortBy;
+            filterShowDownloaded = e.detail.showDownloaded;
+            filterSortBy = e.detail.sortBy;
+            if (e.detail.sortBy !== prevSortBy && selectedClass) selectClass(selectedClass);
+          }}
           on:searchChange={e => { searchQuery = e.detail; }}
         />
       </aside>
 
-      <main class="content custom-scroll">
+      <main
+        class="content custom-scroll"
+        on:scroll={e => {
+          const el = e.currentTarget;
+          if (el.scrollHeight - el.scrollTop - el.clientHeight < 300 && hasMore && !loadingMore) loadMore();
+        }}
+      >
         <PresetGrid
           {presets}
           {selectedClass}
@@ -382,12 +459,20 @@
           error={presetsError}
           isPopular={viewMode === 'popular'}
           {filterShowDownloaded}
-          {filterSortBy}
           {searchQuery}
+          {hasMore}
+          {loadingMore}
         />
       </main>
     {/if}
   </div>
+
+  {#if appLoading && !appError}
+    <div class="status-bar">
+      <div class="status-bar-track"><div class="status-bar-sweep"></div></div>
+      <span class="status-bar-text">{initStatus}</span>
+    </div>
+  {/if}
 </div>
 
 <PresetDetail />
@@ -400,6 +485,10 @@
     on:save={handleSettingsSave}
     on:close={() => (settingsOpen = false)}
   />
+{/if}
+
+{#if $logViewerOpen}
+  <LogViewer on:close={() => logViewerOpen.set(false)} />
 {/if}
 
 <style>
@@ -493,7 +582,6 @@
   .scrapper-strip[data-phase="image2"] .scrapper-fill    { background: rgba(59, 130, 246, 0.20); }
   .scrapper-strip[data-phase="popular"] .scrapper-fill   { background: rgba(139, 92, 246, 0.22); }
   .scrapper-strip[data-phase="popular-images"] .scrapper-fill { background: rgba(168, 85, 247, 0.18); }
-  .scrapper-strip[data-phase="init"] .scrapper-fill      { background: rgba(184, 134, 11, 0.22); }
 
   .scrapper-label {
     position: relative;
@@ -547,6 +635,7 @@
     border-color: rgba(220, 60, 60, 0.5);
   }
 
+  .btn-logs,
   .btn-settings {
     background: transparent;
     border: 1px solid #1a232c;
@@ -562,6 +651,7 @@
     transition: border-color 0.2s, color 0.2s;
   }
 
+  .btn-logs:hover,
   .btn-settings:hover {
     border-color: #ffcc4d;
     color: #ffcc4d;
@@ -596,6 +686,63 @@
     flex: 1;
     display: flex;
     overflow: hidden;
+    position: relative;
+  }
+
+  .app-init-error {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: #f87171;
+    background: rgba(7, 10, 14, 0.85);
+    z-index: 10;
+  }
+
+  .status-bar {
+    height: 22px;
+    min-height: 22px;
+    background: #060810;
+    border-top: 1px solid #141c24;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    flex-shrink: 0;
+  }
+
+  .status-bar-track {
+    width: 120px;
+    height: 2px;
+    background: #141c24;
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .status-bar-sweep {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 50%;
+    background: linear-gradient(90deg, transparent, rgba(255, 204, 77, 0.7), transparent);
+    animation: status-sweep 1.4s ease-in-out infinite;
+  }
+
+  .status-bar-text {
+    font-size: 10px;
+    font-family: monospace;
+    letter-spacing: 0.08em;
+    color: #2d3d50;
+  }
+
+  @keyframes status-sweep {
+    0%   { left: -50%; }
+    100% { left: 120%; }
   }
 
   .skel-sidebar {
