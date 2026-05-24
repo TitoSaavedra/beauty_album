@@ -1,0 +1,1 @@
+SELECT COUNT(*) FROM logs WHERE tag = 'ERR'

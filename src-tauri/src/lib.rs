@@ -7,10 +7,10 @@ use commands::album::{get_classes, get_presets, inject_preset, is_db_ready, open
 use commands::config::{get_config, save_config};
 use commands::logs::{get_log_stats, get_logs};
 use commands::popular::{
-    discard_preset, get_class_favorites, get_popular_classes, get_popular_presets, get_wanted,
-    set_class_favorite, set_wanted, sync_popular, toggle_wanted,
+    discard_preset, get_class_favorites, get_popular_classes, get_popular_presets, get_popular_stats,
+    get_wanted, set_class_favorite, set_wanted, sync_popular, toggle_wanted,
 };
-use commands::scrapper::{check_pending, check_pending_image2, run_scrapper, stop_scrapper};
+use commands::scrapper::{check_pending, run_scrapper, stop_scrapper};
 use services::{config::config_service, db, scraping::scrapper_service};
 use state::{AppState, DbPool, ScrapperCancelToken};
 use std::sync::Mutex;
@@ -20,6 +20,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            services::log::init(app.handle());
             let initial_config = config_service::load(app.handle());
             app.manage(AppState(Mutex::new(initial_config)));
             app.manage(ScrapperCancelToken::default());
@@ -79,10 +80,10 @@ pub fn run() {
             run_scrapper,
             stop_scrapper,
             check_pending,
-            check_pending_image2,
             sync_popular,
             get_popular_classes,
             get_popular_presets,
+            get_popular_stats,
             discard_preset,
             get_wanted,
             set_wanted,

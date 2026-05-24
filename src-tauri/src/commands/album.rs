@@ -20,6 +20,7 @@ pub async fn get_classes(db: State<'_, DbPool>) -> Result<Vec<serde_json::Value>
 pub async fn get_presets(
     class_name: String,
     #[allow(non_snake_case)] sortBy: Option<String>,
+    search: Option<String>,
     offset: Option<i64>,
     limit: Option<i64>,
     state: State<'_, AppState>,
@@ -32,6 +33,7 @@ pub async fn get_presets(
         &presets_dir,
         &class_name,
         sortBy.as_deref().unwrap_or("downloads"),
+        search.as_deref().unwrap_or(""),
         offset.unwrap_or(0),
         limit.unwrap_or(50),
     )

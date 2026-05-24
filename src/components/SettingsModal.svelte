@@ -15,10 +15,10 @@
 
   $: previewPaths = bdo_docs_dir.trim()
     ? [
-        { label: 'Database', path: bdo_docs_dir.trim() + '\\DB' },
-        { label: 'Presets', path: bdo_docs_dir.trim() + '\\Presets' },
-        { label: 'Input', path: bdo_docs_dir.trim() + '\\to_download' },
-        { label: 'Apply', path: bdo_docs_dir.trim() + '\\Customization' },
+        { label: 'Database', path: bdo_docs_dir.trim() + '\\Beauty Album\\DB' },
+        { label: 'Presets', path: bdo_docs_dir.trim() + '\\Beauty Album\\Presets' },
+        { label: 'Input', path: bdo_docs_dir.trim() + '\\Beauty Album\\to_download' },
+        { label: 'Apply', path: bdo_docs_dir.trim() + '\\Beauty Album\\Customization' },
       ]
     : [];
 

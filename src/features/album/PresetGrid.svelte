@@ -3,6 +3,7 @@
   import { cubicOut } from 'svelte/easing';
   import type { PresetEntry } from '../../tauri/album';
   import { discardPreset } from '../../tauri/album';
+  import { wantedPresets } from '../../stores/wantedPresets';
   import PresetCard from './PresetCard.svelte';
 
   export let presets: PresetEntry[] = [];
@@ -10,31 +11,23 @@
   export let loading = false;
   export let error = '';
   export let isPopular = false;
-  export let filterShowDownloaded = true;
-  export let searchQuery = '';
   export let hasMore = false;
   export let loadingMore = false;
+  export let extraLoading = false;
 
   let discarded = new Set<string>();
 
   $: localPresets = (() => {
     let list = [...presets];
 
-    if (!filterShowDownloaded) {
-      list = list.filter(p => !p.is_downloaded);
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(p =>
-        (p.title ?? p.name ?? '').toLowerCase().includes(q) ||
-        (p.creator ?? '').toLowerCase().includes(q)
-      );
-    }
-
     if (isPopular) {
       list = list.filter(p => !discarded.has(p.preset_id ?? ''));
-      list.sort((a, b) => (b.is_downloaded ? 1 : 0) - (a.is_downloaded ? 1 : 0));
+      list.sort((a, b) => {
+        const aWanted = $wantedPresets.has(a.preset_id ?? '');
+        const bWanted = $wantedPresets.has(b.preset_id ?? '');
+        if (aWanted !== bWanted) return bWanted ? 1 : -1;
+        return 0;
+      });
     }
 
     return list;
@@ -78,7 +71,7 @@
         <PresetCard {preset} {selectedClass} on:discard={handleDiscard} />
       </div>
     {/each}
-    {#if loadingMore}
+    {#if loadingMore || (extraLoading && hasMore)}
       {#each Array.from({length: 6}) as _, i}
         <div class="skel-card" style="animation-delay: {i * 60}ms"></div>
       {/each}

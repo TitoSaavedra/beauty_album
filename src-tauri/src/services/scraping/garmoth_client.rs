@@ -10,7 +10,7 @@ pub struct GarmothPreset {
     pub id: u64,
     pub class: u32,
     pub title: Option<String>,
-    pub creation_at: i64,
+    pub created_at: i64,
     pub image_1: Option<String>,
     pub image_2: Option<String>,
     pub user_nickname: Option<String>,

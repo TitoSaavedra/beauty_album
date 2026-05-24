@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export interface ClassEntry {
+    class_id: number;
     name: string;
     icon_svg?: string | null;
     preset_count: number;
@@ -39,8 +40,9 @@ export const getPresets = (
     offset = 0,
     limit = 50,
     sortBy = 'downloads',
+    search = '',
 ): Promise<PresetEntry[]> =>
-    invoke('get_presets', { className, offset, limit, sortBy });
+    invoke('get_presets', { className, offset, limit, sortBy, search });
 
 export const getConfig = (): Promise<AppConfig> =>
     invoke('get_config');
@@ -63,8 +65,6 @@ export const stopScrapper = (): Promise<void> =>
 export const checkPending = (): Promise<number> =>
     invoke('check_pending');
 
-export const checkPendingImage2 = (): Promise<number> =>
-    invoke('check_pending_image2');
 
 export const isDbReady = (): Promise<boolean> =>
     invoke('is_db_ready');
@@ -75,16 +75,27 @@ export const openLogs = (): Promise<void> =>
 export const syncPopular = (): Promise<string> =>
     invoke('sync_popular');
 
-export const getPopularClasses = (): Promise<ClassEntry[]> =>
-    invoke('get_popular_classes');
+export const getPopularClasses = (sinceTs = 0): Promise<ClassEntry[]> =>
+    invoke('get_popular_classes', { sinceTs });
 
 export const getPopularPresets = (
     className: string,
     offset = 0,
     limit = 50,
     sortBy = 'downloads',
+    search = '',
+    sinceTs = 0,
 ): Promise<PresetEntry[]> =>
-    invoke('get_popular_presets', { className, offset, limit, sortBy });
+    invoke('get_popular_presets', { className, offset, limit, sortBy, search, sinceTs });
+
+export interface PopularStats {
+    total: number;
+    d20: number; d30: number; d60: number;
+    d90: number; d180: number; d365: number;
+}
+
+export const getPopularStats = (className: string): Promise<PopularStats> =>
+    invoke('get_popular_stats', { className });
 
 export const openUrl = (url: string): Promise<void> =>
     invoke('open_url', { url });

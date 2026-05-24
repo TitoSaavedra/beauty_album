@@ -13,7 +13,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     fn root(&self) -> PathBuf {
-        PathBuf::from(&self.bdo_docs_dir)
+        PathBuf::from(&self.bdo_docs_dir).join("Beauty Album")
     }
 
     /// DB folder: album.db lives here.
@@ -40,9 +40,9 @@ impl AppConfig {
         self.root().join("to_download")
     }
 
-    /// BDO reads preset files from here — standard BDO path, not our folder.
+    /// BDO reads preset files from here — lives directly under bdo_docs_dir, not Beauty Album.
     pub fn customization_dir(&self) -> PathBuf {
-        self.root().join("Customization")
+        PathBuf::from(&self.bdo_docs_dir).join("Customization")
     }
 }
 

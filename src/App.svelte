@@ -21,6 +21,7 @@
     status: string;
     message: string;
     class_name: string;
+    class_id: number;
     current: number;
     total: number;
   }
@@ -31,7 +32,7 @@
   let scrapperTotal = 0;
   let scrapperMsg = '';
   let scrapperError = '';
-  let scrapperPhase: 'presets' | 'images' | 'image2' | '' = '';
+  let scrapperPhase: 'presets' | 'images' | '' = '';
   let settingsOpen = false;
   let classes: ClassEntry[] = [];
   let selectedClass: string | null = null;
@@ -46,9 +47,11 @@
   let popularTotal = 0;
   let popularMsg = '';
   let popularPhase: 'syncing' | 'images' | '' = '';
-  let filterShowDownloaded = true;
   let filterSortBy: 'downloads' | 'views' | 'favorites' = 'downloads';
+  let filterSinceTs = 0;
   let searchQuery = '';
+  let popularStats: import('./tauri/album').PopularStats | null = null;
+  let searchDebounce: ReturnType<typeof setTimeout> | null = null;
   let appLoading = true;
   let appError = '';
   let initStatus = 'Initializing...';
@@ -58,20 +61,31 @@
   let hasMore = false;
   let loadingMore = false;
 
+  let gridRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  $: selectedClassId = classes.find(c => c.name === selectedClass)?.class_id ?? null;
+
+  function scheduleGridRefresh(classId: number) {
+    if (gridRefreshTimer !== null) clearTimeout(gridRefreshTimer);
+    gridRefreshTimer = setTimeout(async () => {
+      gridRefreshTimer = null;
+      if (classId !== selectedClassId || !selectedClass || !config.bdo_docs_dir) return;
+      try {
+        const results = viewMode === 'popular'
+          ? await api.getPopularPresets(selectedClass, 0, PAGE_SIZE, filterSortBy, searchQuery, filterSinceTs)
+          : await api.getPresets(selectedClass, 0, PAGE_SIZE, filterSortBy, searchQuery);
+        presets = results;
+        presetOffset = 0;
+        hasMore = results.length === PAGE_SIZE;
+      } catch { /* non-fatal */ }
+    }, 400);
+  }
+
+
   async function runQueues() {
-    initStatus = 'Checking to_download...';
     const pending = await api.checkPending();
-
-    initStatus = 'Checking image_2 queue...';
-    const pendingImg2 = await api.checkPendingImage2();
-
-    if (pending > 0 || pendingImg2 > 0) {
-      initStatus = `Starting sync (${pending} presets, ${pendingImg2} images)...`;
-      await startScraper();
-    }
-
-    initStatus = 'Checking popular queue...';
-    await startPopularSync();
+    if (pending > 0) await startScraper();
+    await startPopularSync(); 
   }
 
   async function onDbReady(ok: boolean) {
@@ -84,8 +98,8 @@
       await wantedPresets.load();
       initStatus = 'Loading classes...';
       await loadClasses();
-      await runQueues();
       appLoading = false;
+      runQueues();
     } else {
       appLoading = false;
       settingsOpen = true;
@@ -105,9 +119,14 @@
       if (payload.total > 0 && popularTotal === 0) popularTotal = payload.total;
       if (payload.current > 0) popularCurrent = payload.current;
       if (payload.message) popularMsg = payload.message;
-      if (payload.status === 'metadata' || payload.status === 'done') {
+      if (payload.status === 'metadata') {
         popularPhase = 'syncing';
-        if (config.bdo_docs_dir) loadClasses(true);
+        if (viewMode === 'popular' && payload.class_id && payload.class_id === selectedClassId)
+          scheduleGridRefresh(payload.class_id);
+      } else if (payload.status === 'done') {
+        popularPhase = 'syncing';
+        if (viewMode === 'popular' && payload.class_id && payload.class_id === selectedClassId)
+          scheduleGridRefresh(payload.class_id);
       } else if (payload.status === 'additional_data') {
         popularPhase = 'images';
       }
@@ -145,11 +164,19 @@
     hasMore = false;
     loadingPresets = true;
     try {
-      const results = viewMode === 'popular'
-        ? await api.getPopularPresets(name, 0, PAGE_SIZE, filterSortBy)
-        : await api.getPresets(name, 0, PAGE_SIZE, filterSortBy);
-      presets = results;
-      hasMore = results.length === PAGE_SIZE;
+      if (viewMode === 'popular') {
+        const [results, stats] = await Promise.all([
+          api.getPopularPresets(name, 0, PAGE_SIZE, filterSortBy, searchQuery, filterSinceTs),
+          api.getPopularStats(name),
+        ]);
+        presets = results;
+        popularStats = stats;
+        hasMore = results.length === PAGE_SIZE;
+      } else {
+        const results = await api.getPresets(name, 0, PAGE_SIZE, filterSortBy, searchQuery);
+        presets = results;
+        hasMore = results.length === PAGE_SIZE;
+      }
     } catch (err) {
       presetsError = String(err);
     } finally {
@@ -163,8 +190,8 @@
     const nextOffset = presetOffset + PAGE_SIZE;
     try {
       const results = viewMode === 'popular'
-        ? await api.getPopularPresets(selectedClass, nextOffset, PAGE_SIZE, filterSortBy)
-        : await api.getPresets(selectedClass, nextOffset, PAGE_SIZE, filterSortBy);
+        ? await api.getPopularPresets(selectedClass, nextOffset, PAGE_SIZE, filterSortBy, searchQuery, filterSinceTs)
+        : await api.getPresets(selectedClass, nextOffset, PAGE_SIZE, filterSortBy, searchQuery);
       presets = [...presets, ...results];
       presetOffset = nextOffset;
       hasMore = results.length === PAGE_SIZE;
@@ -181,7 +208,7 @@
     try {
       const prev = selectedClass;
       const fresh = viewMode === 'popular'
-        ? await api.getPopularClasses()
+        ? await api.getPopularClasses(filterSinceTs)
         : await api.getClasses();
       if (!keepSelected || classes.length === 0) {
         classes = fresh;
@@ -195,11 +222,7 @@
         ? prev
         : classes[0]?.name;
       if (!target) return;
-      if (keepSelected && target === prev) {
-        // class counts already updated above — don't reset presets during background sync
-      } else {
-        await selectClass(target);
-      }
+      await selectClass(target);
     } catch (e) {
       classesError = String(e);
     } finally {
@@ -220,8 +243,8 @@
       initStatus = 'Reloading...';
       await wantedPresets.load();
       await loadClasses();
-      await runQueues();
       appLoading = false;
+      runQueues();
     } else {
       // First-time setup — Rust will open DB and emit db_ready; listener handles the rest.
       appLoading = true;
@@ -233,8 +256,9 @@
     selectClass(e.detail);
   }
 
-  async function toggleMode() {
-    viewMode = viewMode === 'presets' ? 'popular' : 'presets';
+  async function setMode(mode: 'presets' | 'popular') {
+    if (viewMode === mode) return;
+    viewMode = mode;
     selectedClass = null;
     presets = [];
     if (config.bdo_docs_dir) await loadClasses();
@@ -278,10 +302,12 @@
 
       if (payload.status === 'metadata') {
         scrapperPhase = 'presets';
-        if (config.bdo_docs_dir) loadClasses(true);
+        if (viewMode === 'presets' && payload.class_id && payload.class_id === selectedClassId)
+          scheduleGridRefresh(payload.class_id);
       } else if (payload.status === 'done') {
         scrapperPhase = 'images';
-        if (config.bdo_docs_dir) loadClasses(true);
+        if (viewMode === 'presets' && payload.class_id && payload.class_id === selectedClassId)
+          scheduleGridRefresh(payload.class_id);
         const pid = payload.preset_id;
         const cls = payload.class_name;
         toast.show(`${cls} #${pid} downloaded`, 'success', 5000, async () => {
@@ -289,8 +315,6 @@
           const found = list.find(p => p.preset_id === pid);
           if (found) presetDetail.set(found);
         });
-      } else if (payload.status === 'additional_data') {
-        scrapperPhase = 'image2';
       } else if (payload.status === 'error') {
         scrapperError = payload.message;
       } else if (payload.status === 'cancelled') {
@@ -333,7 +357,6 @@
     const prefix = scrapperTotal > 0 ? `${scrapperCurrent}/${scrapperTotal} — ` : '';
     const label = scrapperPhase === 'presets' ? 'Downloading Presets'
       : scrapperPhase === 'images' ? 'Downloading Images'
-      : scrapperPhase === 'image2' ? 'Additional Data'
       : scrapperMsg;
     return `${prefix}${label}`;
   })();
@@ -378,32 +401,9 @@
       {/if}
     </div>
     <div class="nav-actions">
-      {#if popularRunning}
-        <button class="btn-stop-popular" on:click={() => api.stopScrapper()}>Stop</button>
-      {/if}
-      <button class="btn-mode" class:btn-mode-active={viewMode === 'popular'} on:click={toggleMode}>
-        {viewMode === 'popular' ? 'Popular' : 'Presets'}
-      </button>
-      <button class="btn-logs" on:click={() => logViewerOpen.set(true)} title="Logs">≡</button>
       <button class="btn-settings" on:click={() => (settingsOpen = true)} title="Settings">⚙</button>
     </div>
   </nav>
-
-  {#if scrapperRunning || scrapperMsg || popularRunning}
-    <div
-      class="scrapper-strip"
-      class:has-error={!!scrapperError}
-      data-phase={stripPhase}
-    >
-      <div
-        class="scrapper-fill"
-        style="width: {popularRunning
-          ? (popularTotal > 0 ? Math.round((popularCurrent / popularTotal) * 100) : 0)
-          : (scrapperTotal > 0 ? Math.round((scrapperCurrent / scrapperTotal) * 100) : 0)}%"
-      ></div>
-      <span class="scrapper-label">{stripLabel}</span>
-    </div>
-  {/if}
 
   <div class="main-layout">
     {#if appLoading || appError}
@@ -432,16 +432,29 @@
           {selectedClass}
           loading={loadingClasses}
           error={classesError}
-          {filterShowDownloaded}
           {filterSortBy}
+          {viewMode}
+          {popularStats}
           on:select={handleSelectClass}
           on:filterChange={e => {
-            const prevSortBy = filterSortBy;
-            filterShowDownloaded = e.detail.showDownloaded;
+            const prevSinceTs = filterSinceTs;
             filterSortBy = e.detail.sortBy;
-            if (e.detail.sortBy !== prevSortBy && selectedClass) selectClass(selectedClass);
+            filterSinceTs = e.detail.sinceTs;
+            if (filterSinceTs !== prevSinceTs && viewMode === 'popular') {
+              loadClasses(true);
+            } else if (selectedClass) {
+              selectClass(selectedClass);
+            }
           }}
-          on:searchChange={e => { searchQuery = e.detail; }}
+          on:searchChange={e => {
+            searchQuery = e.detail;
+            if (searchDebounce) clearTimeout(searchDebounce);
+            searchDebounce = setTimeout(() => {
+              searchDebounce = null;
+              if (selectedClass) selectClass(selectedClass);
+            }, 350);
+          }}
+          on:modeChange={e => setMode(e.detail)}
         />
       </aside>
 
@@ -458,19 +471,29 @@
           loading={loadingPresets}
           error={presetsError}
           isPopular={viewMode === 'popular'}
-          {filterShowDownloaded}
-          {searchQuery}
           {hasMore}
           {loadingMore}
+          extraLoading={popularRunning && viewMode === 'popular'}
         />
       </main>
     {/if}
   </div>
 
-  {#if appLoading && !appError}
-    <div class="status-bar">
-      <div class="status-bar-track"><div class="status-bar-sweep"></div></div>
-      <span class="status-bar-text">{initStatus}</span>
+  {#if (appLoading && !appError) || scrapperRunning || scrapperMsg || popularRunning}
+    <div class="status-bar" class:has-error={!!scrapperError} data-phase={appLoading ? '' : stripPhase}>
+      <div class="status-bar-track">
+        {#if appLoading || (scrapperRunning && scrapperTotal === 0) || (popularRunning && popularTotal === 0)}
+          <div class="status-bar-sweep"></div>
+        {:else}
+          <div
+            class="status-bar-fill"
+            style="width: {popularRunning
+              ? Math.round((popularCurrent / popularTotal) * 100)
+              : Math.round((scrapperCurrent / scrapperTotal) * 100)}%"
+          ></div>
+        {/if}
+      </div>
+      <span class="status-bar-text">{appLoading ? initStatus : stripLabel}</span>
     </div>
   {/if}
 </div>
@@ -555,87 +578,8 @@
     gap: 8px;
   }
 
-  .scrapper-strip {
-    position: relative;
-    height: 28px;
-    background: #0c1017;
-    border-bottom: 1px solid #1a232c;
-    display: flex;
-    align-items: center;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
 
-  .scrapper-strip.has-error .scrapper-fill {
-    background: rgba(220, 60, 60, 0.35) !important;
-  }
 
-  .scrapper-fill {
-    position: absolute;
-    inset: 0;
-    background: rgba(184, 134, 11, 0.18);
-    transition: width 0.3s ease, background 0.4s ease;
-  }
-
-  .scrapper-strip[data-phase="presets"] .scrapper-fill   { background: rgba(184, 134, 11, 0.22); }
-  .scrapper-strip[data-phase="images"] .scrapper-fill    { background: rgba(6, 182, 212, 0.22); }
-  .scrapper-strip[data-phase="image2"] .scrapper-fill    { background: rgba(59, 130, 246, 0.20); }
-  .scrapper-strip[data-phase="popular"] .scrapper-fill   { background: rgba(139, 92, 246, 0.22); }
-  .scrapper-strip[data-phase="popular-images"] .scrapper-fill { background: rgba(168, 85, 247, 0.18); }
-
-  .scrapper-label {
-    position: relative;
-    font-size: 10px;
-    font-family: monospace;
-    letter-spacing: 0.08em;
-    color: #64748b;
-    padding: 0 16px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .btn-mode {
-    background: transparent;
-    border: 1px solid #1a232c;
-    border-radius: 5px;
-    color: #64748b;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 0 14px;
-    height: 34px;
-    cursor: pointer;
-    transition: border-color 0.2s, color 0.2s;
-  }
-
-  .btn-mode:hover, .btn-mode-active {
-    border-color: #ffcc4d;
-    color: #ffcc4d;
-  }
-
-  .btn-stop-popular {
-    background: rgba(220, 60, 60, 0.08);
-    border: 1px solid rgba(220, 60, 60, 0.25);
-    border-radius: 5px;
-    color: #f87171;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    padding: 0 14px;
-    height: 34px;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
-  }
-
-  .btn-stop-popular:hover {
-    background: rgba(220, 60, 60, 0.15);
-    border-color: rgba(220, 60, 60, 0.5);
-  }
-
-  .btn-logs,
   .btn-settings {
     background: transparent;
     border: 1px solid #1a232c;
@@ -651,7 +595,6 @@
     transition: border-color 0.2s, color 0.2s;
   }
 
-  .btn-logs:hover,
   .btn-settings:hover {
     border-color: #ffcc4d;
     color: #ffcc4d;
@@ -732,6 +675,23 @@
     background: linear-gradient(90deg, transparent, rgba(255, 204, 77, 0.7), transparent);
     animation: status-sweep 1.4s ease-in-out infinite;
   }
+
+  .status-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: rgba(255, 204, 77, 0.7);
+    transition: width 0.3s ease;
+    border-radius: 2px;
+  }
+
+  .status-bar[data-phase="presets"] .status-bar-fill   { background: rgba(255, 204, 77, 0.75); }
+  .status-bar[data-phase="images"] .status-bar-fill    { background: rgba(6, 182, 212, 0.75); }
+
+  .status-bar[data-phase="popular"] .status-bar-fill   { background: rgba(139, 92, 246, 0.75); }
+  .status-bar[data-phase="popular-images"] .status-bar-fill { background: rgba(168, 85, 247, 0.75); }
+  .status-bar.has-error .status-bar-fill               { background: rgba(220, 60, 60, 0.75); }
 
   .status-bar-text {
     font-size: 10px;

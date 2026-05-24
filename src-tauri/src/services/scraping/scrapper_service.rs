@@ -17,6 +17,7 @@ pub struct ScrapperProgress {
     pub status: String,
     pub message: String,
     pub class_name: String,
+    pub class_id: u32,
     pub current: usize,
     pub total: usize,
 }
@@ -112,6 +113,7 @@ async fn process_image(
             status: "done".to_string(),
             message: format!("Synced {}", meta.preset.preset_id),
             class_name: meta.preset.class_hint.clone(),
+            class_id: meta.data.class,
             current,
             total,
         });
@@ -123,6 +125,7 @@ async fn process_image(
         status: "processing".to_string(),
         message: format!("Downloading {}", meta.preset.preset_id),
         class_name: meta.preset.class_hint.clone(),
+        class_id: meta.data.class,
         current,
         total,
     });
@@ -140,75 +143,48 @@ async fn process_image(
         &meta.preset.class_hint,
     ).await;
 
-    if got {
-        let _ = sqlx::query("UPDATE presets SET image_1=?, is_ok=1, updated_at=? WHERE id=?")
+    if !got {
+        return (false, false);
+    }
+
+    let img2_saved = if let Some(img2) = &meta.image_2 {
+        image::acquire_image(browser, &[popular_dir], meta.preset.preset_id, meta.data.class, img2, &meta.preset_dir.join(img2), log, &meta.preset.class_hint).await
+    } else {
+        false
+    };
+
+    let now = chrono::Local::now().timestamp();
+    if img2_saved {
+        let _ = sqlx::query("UPDATE presets SET image_1=?, image_2=?, is_ok=1, updated_at=? WHERE id=?")
             .bind(img1.as_str())
-            .bind(chrono::Local::now().timestamp())
+            .bind(meta.image_2.as_deref().unwrap())
+            .bind(now)
             .bind(meta.preset.preset_id as i64)
             .execute(pool)
             .await;
-        log.tag(&meta.preset.class_hint, &format!("Done preset {}", meta.preset.preset_id)).await;
-        events::emit_progress(app, ScrapperProgress {
-            preset_id: meta.preset.preset_id.to_string(),
-            status: "done".to_string(),
-            message: format!("Synced {}", meta.preset.preset_id),
-            class_name: meta.preset.class_hint.clone(),
-            current,
-            total,
-        });
+    } else {
+        let _ = sqlx::query("UPDATE presets SET image_1=?, is_ok=1, updated_at=? WHERE id=?")
+            .bind(img1.as_str())
+            .bind(now)
+            .bind(meta.preset.preset_id as i64)
+            .execute(pool)
+            .await;
     }
 
-    (got, got && !already_exists)
+    log.tag(&meta.preset.class_hint, &format!("Done preset {}", meta.preset.preset_id)).await;
+    events::emit_progress(app, ScrapperProgress {
+        preset_id: meta.preset.preset_id.to_string(),
+        status: "done".to_string(),
+        message: format!("Synced {}", meta.preset.preset_id),
+        class_name: meta.preset.class_hint.clone(),
+        class_id: meta.data.class,
+        current,
+        total,
+    });
+
+    (true, !already_exists)
 }
 
-async fn phase2_images(
-    items: &[FetchedMeta],
-    synced_ids: &HashSet<u64>,
-    browser: &playwright_service::BrowserSession,
-    pool: &SqlitePool,
-    log: &Logger,
-    app: &AppHandle,
-    cancel: &Arc<AtomicBool>,
-) {
-    let img2_list: Vec<&FetchedMeta> = items.iter()
-        .filter(|m| m.image_2.is_some() && synced_ids.contains(&m.preset.preset_id))
-        .collect();
-    let img2_total = img2_list.len();
-    if img2_total == 0 { return; }
-
-    log.tag("SYNC", &format!("Phase 2: {} image_2 download(s)", img2_total)).await;
-
-    for (idx, meta) in img2_list.into_iter().enumerate() {
-        if cancel.load(Ordering::Relaxed) {
-            log.tag("USER", "Cancelled in phase 2").await;
-            break;
-        }
-        events::emit_progress(app, ScrapperProgress {
-            preset_id: meta.preset.preset_id.to_string(),
-            status: "additional_data".to_string(),
-            message: format!("Additional data {}/{}", idx + 1, img2_total),
-            class_name: meta.preset.class_hint.clone(),
-            current: idx + 1,
-            total: img2_total,
-        });
-
-        let img2 = meta.image_2.as_ref().unwrap();
-        let dest = meta.preset_dir.join(img2);
-        let got = image::acquire_image(
-            browser, &[], meta.preset.preset_id, meta.data.class,
-            img2, &dest, log, &meta.preset.class_hint,
-        ).await;
-
-        if got {
-            let _ = sqlx::query("UPDATE presets SET image_2=? WHERE id=?")
-                .bind(img2.as_str())
-                .bind(meta.preset.preset_id as i64)
-                .execute(pool)
-                .await;
-        }
-        image::jitter_sleep().await;
-    }
-}
 
 pub async fn run(
     app: &AppHandle,
@@ -274,6 +250,7 @@ pub async fn run(
                     status: "cancelled".to_string(),
                     message: "Cancelled".to_string(),
                     class_name: preset.class_hint.clone(),
+                    class_id: 0,
                     current: i + 1,
                     total,
                 });
@@ -285,6 +262,7 @@ pub async fn run(
                 status: "processing".to_string(),
                 message: format!("Fetching {}", preset.preset_id),
                 class_name: preset.class_hint.clone(),
+                class_id: 0,
                 current: i + 1,
                 total,
             });
@@ -331,7 +309,7 @@ pub async fn run(
             .bind(data.likes as i64)
             .bind(&image_2)
             .bind(&pab_filename)
-            .bind(data.creation_at)
+            .bind(data.created_at)
             .bind(now)
             .bind(&raw_json)
             .execute(&pool)
@@ -344,6 +322,7 @@ pub async fn run(
                 status: "metadata".to_string(),
                 message: format!("Ready: {}", preset.preset_id),
                 class_name: preset.class_hint.clone(),
+                class_id: data.class,
                 current,
                 total,
             });
@@ -355,8 +334,6 @@ pub async fn run(
 
     let mut n_done = 0usize;
     let mut n_err = fetch_errors.load(Ordering::Relaxed);
-    let mut synced_ids: HashSet<u64> = HashSet::new();
-    let mut fetched: Vec<FetchedMeta> = Vec::new();
     let mut img_current = 0usize;
 
     while let Some(meta) = rx.recv().await {
@@ -369,27 +346,20 @@ pub async fn run(
                 status: "cancelled".to_string(),
                 message: "Cancelled".to_string(),
                 class_name: meta.preset.class_hint.clone(),
+                class_id: meta.data.class,
                 current: img_current,
                 total,
             });
-            fetched.push(meta);
             while rx.recv().await.is_some() {}
             break;
         }
 
         let (done, http_dl) = process_image(&meta, &browser, pool, popular_dir, &log, app, img_current, total).await;
-        if done {
-            synced_ids.insert(meta.preset.preset_id);
-            n_done += 1;
-        } else {
-            n_err += 1;
-        }
-        fetched.push(meta);
+        if done { n_done += 1; } else { n_err += 1; }
         if http_dl { image::jitter_sleep().await; }
     }
 
     events::emit_refresh_album(app);
-    phase2_images(&fetched, &synced_ids, &browser, pool, &log, app, &cancel).await;
 
     let msg = format!("Finished — {} done  {} error(s)", n_done, n_err);
     log.tag("SYNC", &msg).await;

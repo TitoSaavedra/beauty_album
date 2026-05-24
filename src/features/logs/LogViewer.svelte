@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import { getLogs, getLogStats } from '../../tauri/album';
   import type { LogEntry, LogStats } from '../../tauri/album';
 
@@ -43,10 +44,10 @@
     finally { statsLoading = false; }
   }
 
-  async function loadLogs(reset = false) {
+  async function loadLogs() {
     loading = true;
     error = '';
-    if (reset) { page = 0; logs = []; }
+    logs = [];
     try {
       const rows = await getLogs(
         filterTag || undefined,
@@ -54,7 +55,7 @@
         PAGE_SIZE,
         page * PAGE_SIZE,
       );
-      logs = reset ? rows : [...logs, ...rows];
+      logs = rows;
       hasMore = rows.length === PAGE_SIZE;
     } catch (e) {
       error = String(e);
@@ -64,13 +65,15 @@
   }
 
   function applyFilters() {
-    loadLogs(true);
+    page = 0;
+    loadLogs();
   }
 
   function clearFilters() {
     filterTag = '';
     filterSource = '';
-    loadLogs(true);
+    page = 0;
+    loadLogs();
   }
 
   function nextPage() {
@@ -81,14 +84,25 @@
   function prevPage() {
     if (page === 0) return;
     page -= 1;
-    logs = [];
     loadLogs();
   }
 
-  onMount(() => {
+  let unlisten: (() => void) | null = null;
+
+  onMount(async () => {
     loadStats();
-    loadLogs(true);
+    loadLogs();
+    unlisten = await listen<LogEntry>('log_entry', ({ payload }) => {
+      const matchesTag    = !filterTag    || payload.tag    === filterTag;
+      const matchesSource = !filterSource || payload.source === filterSource;
+      if (matchesTag && matchesSource) {
+        logs = [payload, ...logs];
+      }
+      loadStats();
+    });
   });
+
+  onDestroy(() => { unlisten?.(); });
 </script>
 
 <div class="lv-overlay" on:click|self={() => dispatch('close')} role="presentation">

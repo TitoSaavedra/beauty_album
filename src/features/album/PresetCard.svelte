@@ -16,6 +16,7 @@
   $: title = preset.title ?? preset.name ?? preset.preset_id ?? 'Untitled';
   $: creator = preset.creator ?? '';
   $: downloads = preset.downloads ?? 0;
+  $: views = preset.views ?? 0;
   $: favorites = preset.favorites ?? 0;
   $: id = preset.preset_id ?? '';
   $: isPopular = !!preset.is_popular;
@@ -68,25 +69,27 @@
     </div>
 
     {#if isPopular && !isDownloaded}
-      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-      <button
-        class="card-action-btn want-btn"
-        class:want-active={isWanted}
-        title={isWanted ? 'Remove from download list' : 'Mark to download'}
-        on:click={toggleWant}
-      >⬇</button>
-      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-      <button
-        class="card-action-btn discard-btn"
-        title="Discard"
-        on:click={discard}
-      >✕</button>
+      <div class="card-actions">
+        <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+        <button
+          class="action-want"
+          class:want-active={isWanted}
+          title={isWanted ? 'Remove from download list' : 'Mark to download'}
+          on:click={toggleWant}
+        >
+          <span class="action-icon">{isWanted ? '★' : '↓'}</span>
+          <span class="action-label">{isWanted ? 'Marked' : 'Download'}</span>
+        </button>
+        <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+        <button class="action-discard" title="Discard" on:click={discard}>✕</button>
+      </div>
     {/if}
   </div>
 
   <div class="card-footer">
-    <span class="stat">📥 {Number(downloads).toLocaleString()}</span>
-    <span class="stat">❤️ {Number(favorites).toLocaleString()}</span>
+    <span class="stat" title="Downloads">↓ {Number(downloads).toLocaleString()}</span>
+    <span class="stat" title="Views">◉ {Number(views).toLocaleString()}</span>
+    <span class="stat stat-fav" title="Favorites">♥ {Number(favorites).toLocaleString()}</span>
   </div>
 </div>
 
@@ -100,12 +103,12 @@
     flex-direction: column;
     cursor: pointer;
     position: relative;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: border-color 0.25s, box-shadow 0.25s;
   }
 
   .preset-card:hover {
     border-color: #ffcc4d;
-    box-shadow: 0 0 24px rgba(255, 204, 77, 0.12);
+    box-shadow: 0 0 20px rgba(255, 204, 77, 0.1);
   }
 
   .preset-card.downloaded {
@@ -114,7 +117,7 @@
 
   .preset-card.downloaded:hover {
     border-color: #4ade80;
-    box-shadow: 0 0 24px rgba(34, 197, 94, 0.12);
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.1);
   }
 
   .thumb-wrap {
@@ -163,8 +166,14 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.45) 50%, transparent 100%);
-    padding: 32px 14px 12px;
+    background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.5) 55%, transparent 100%);
+    padding: 36px 12px 10px;
+    transform: translateY(6px);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .preset-card:hover .gradient-overlay {
+    transform: translateY(0);
   }
 
   .card-title {
@@ -178,7 +187,7 @@
   }
 
   .card-creator {
-    font-size: 11px;
+    font-size: 10px;
     color: #94a3b8;
     margin-top: 2px;
     white-space: nowrap;
@@ -186,58 +195,91 @@
     text-overflow: ellipsis;
   }
 
+  /* Action strip — shown on hover */
+  .card-actions {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 1px;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 6;
+    padding: 0 10px 10px;
+  }
+
+  .preset-card:hover .card-actions {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .action-want {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 28px;
+    border-radius: 5px 0 0 5px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(8, 12, 18, 0.92);
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+  }
+
+  .action-want:hover,
+  .action-want.want-active {
+    background: rgba(255, 204, 77, 0.14);
+    color: #ffcc4d;
+    border-color: rgba(255, 204, 77, 0.35);
+  }
+
+  .action-icon { font-size: 12px; line-height: 1; }
+  .action-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .action-discard {
+    width: 28px;
+    height: 28px;
+    border-radius: 0 5px 5px 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: none;
+    background: rgba(8, 12, 18, 0.92);
+    color: #64748b;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+  }
+
+  .action-discard:hover {
+    background: rgba(220, 60, 60, 0.18);
+    color: #f87171;
+    border-color: rgba(220, 60, 60, 0.3);
+  }
+
   .card-footer {
-    padding: 10px 14px;
+    padding: 8px 12px;
     background: #0c1015;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-top: 1px solid #141b23;
+    gap: 4px;
   }
 
   .stat {
-    font-size: 11px;
+    font-size: 10px;
     font-family: monospace;
-    color: #94a3b8;
+    color: #475569;
+    letter-spacing: 0.04em;
   }
 
-  .card-action-btn {
-    position: absolute;
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-    border: none;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    z-index: 5;
-  }
-
-  .want-btn {
-    bottom: 10px;
-    right: 10px;
-    background: rgba(10, 12, 18, 0.85);
-    color: #64748b;
-  }
-
-  .want-btn:hover, .want-btn.want-active {
-    background: rgba(255, 204, 77, 0.15);
-    color: #ffcc4d;
-    border: 1px solid rgba(255, 204, 77, 0.3);
-  }
-
-  .discard-btn {
-    top: 8px;
-    right: 8px;
-    background: rgba(10, 12, 18, 0.85);
-    color: #64748b;
-  }
-
-  .discard-btn:hover {
-    background: rgba(220, 60, 60, 0.2);
-    color: #f87171;
-  }
+  .stat-fav { color: #64405a; }
+  .preset-card:hover .stat { color: #64748b; }
+  .preset-card:hover .stat-fav { color: #7c4f6d; }
 </style>

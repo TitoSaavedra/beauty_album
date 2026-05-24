@@ -174,6 +174,7 @@ async fn download_all(
             status: "metadata".to_string(),
             message: format!("Ready: {}", id),
             class_name: class_display.to_string(),
+            class_id,
             current: i + 1,
             total,
         });
@@ -220,6 +221,7 @@ async fn download_all(
             status: "done".to_string(),
             message: format!("Synced {}", id),
             class_name: class_display.to_string(),
+            class_id,
             current: i + 1,
             total,
         });

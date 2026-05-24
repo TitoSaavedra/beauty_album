@@ -2,20 +2,22 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { fly, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
-  import type { ClassEntry } from '../../tauri/album';
+  import type { ClassEntry, PopularStats } from '../../tauri/album';
   import { getClassFavorites, setClassFavorite } from '../../tauri/album';
 
   export let classes: ClassEntry[] = [];
   export let selectedClass: string | null = null;
   export let loading = false;
   export let error = '';
-  export let filterShowDownloaded = true;
   export let filterSortBy: 'downloads' | 'views' | 'favorites' = 'downloads';
+  export let viewMode: 'presets' | 'popular' = 'presets';
+  export let popularStats: PopularStats | null = null;
 
   const dispatch = createEventDispatcher<{
     select: string;
-    filterChange: { showDownloaded: boolean; sortBy: 'downloads' | 'views' | 'favorites' };
+    filterChange: { sortBy: 'downloads' | 'views' | 'favorites'; sinceTs: number };
     searchChange: string;
+    modeChange: 'presets' | 'popular';
   }>();
 
   let favorites: Set<string> = new Set();
@@ -39,11 +41,12 @@
 
   let search = '';
   let filterOpen = false;
-  let localShowDownloaded = filterShowDownloaded;
   let localSortBy = filterSortBy;
+  let localViewMode = viewMode;
+  let localDays = 0; // 0 = ever
 
-  $: localShowDownloaded = filterShowDownloaded;
   $: localSortBy = filterSortBy;
+  $: localViewMode = viewMode;
 
   $: filtered = search.trim()
     ? classes.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
@@ -56,19 +59,40 @@
     return b.preset_count - a.preset_count;
   });
 
-  $: filterActive = !localShowDownloaded || localSortBy !== 'downloads';
+  $: filterActive = localSortBy !== 'downloads' || localViewMode === 'popular' || localDays !== 0;
 
   function onSearchInput() {
     dispatch('searchChange', search);
   }
 
-  function setSortBy(opt: string) {
-    localSortBy = opt as 'downloads' | 'views' | 'favorites';
+  function setSortBy() {
     emitFilter();
   }
 
+  $: statsCount = (() => {
+    if (!popularStats) return null;
+    if (localDays === 0)   return popularStats.total;
+    if (localDays === 20)  return popularStats.d20;
+    if (localDays === 30)  return popularStats.d30;
+    if (localDays === 60)  return popularStats.d60;
+    if (localDays === 90)  return popularStats.d90;
+    if (localDays === 180) return popularStats.d180;
+    if (localDays === 365) return popularStats.d365;
+    return null;
+  })();
+
+  function sinceTs(): number {
+    if (localDays === 0) return 0;
+    return Math.floor(Date.now() / 1000) - localDays * 86400;
+  }
+
   function emitFilter() {
-    dispatch('filterChange', { showDownloaded: localShowDownloaded, sortBy: localSortBy });
+    dispatch('filterChange', { sortBy: localSortBy, sinceTs: sinceTs() });
+  }
+
+  function toggleViewMode() {
+    localViewMode = localViewMode === 'presets' ? 'popular' : 'presets';
+    dispatch('modeChange', localViewMode);
   }
 
 </script>
@@ -105,34 +129,39 @@
 
   {#if filterOpen}
     <div class="filter-panel" transition:slide={{ duration: 180 }}>
-      <div class="filter-section-label">DISPLAY</div>
       <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-      <div class="filter-toggle-row" on:click={() => { localShowDownloaded = !localShowDownloaded; emitFilter(); }}>
-        <span class="filter-toggle-label">Show Downloaded</span>
-        <div class="toggle-switch" class:toggle-on={localShowDownloaded}>
+      <div class="fp-row" on:click={toggleViewMode}>
+        <span class="fp-label">Popular</span>
+        <div class="toggle-switch" class:toggle-on={localViewMode === 'popular'}>
           <div class="toggle-knob"></div>
         </div>
       </div>
 
-      <div class="filter-divider"></div>
-
-      <div class="filter-section-label">SORT BY</div>
-      <div class="sort-grid">
-        {#each [
-          { key: 'downloads', icon: '↓', label: 'Downloads' },
-          { key: 'views',     icon: '◉', label: 'Views' },
-          { key: 'favorites', icon: '♥', label: 'Favorites' },
-        ] as opt}
-          <button
-            class="sort-pill"
-            class:sort-pill-active={localSortBy === opt.key}
-            on:click={() => setSortBy(opt.key)}
-          >
-            <span class="sort-pill-icon">{opt.icon}</span>
-            <span>{opt.label}</span>
-          </button>
-        {/each}
+      <div class="fp-selects">
+        {#if localViewMode === 'popular'}
+          <select class="fp-select" bind:value={localDays} on:change={emitFilter}>
+            <option value={0}>Ever</option>
+            <option value={20}>20 days</option>
+            <option value={30}>30 days</option>
+            <option value={60}>60 days</option>
+            <option value={90}>90 days</option>
+            <option value={180}>180 days</option>
+            <option value={365}>365 days</option>
+          </select>
+        {/if}
+        <div class="fp-sort-wrap">
+          <span class="fp-sort-label">Sort</span>
+          <select class="fp-select" bind:value={localSortBy} on:change={setSortBy}>
+            <option value="downloads">↓ Downloads</option>
+            <option value="views">◉ Views</option>
+            <option value="favorites">♥ Favorites</option>
+          </select>
+        </div>
       </div>
+
+      {#if localViewMode === 'popular' && statsCount !== null}
+        <div class="fp-count">{statsCount.toLocaleString()} presets</div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -251,117 +280,121 @@
   }
 
   .filter-panel {
-    margin-top: 10px;
+    margin-top: 8px;
     background: #080d14;
     border: 1px solid #1a2535;
-    border-radius: 8px;
-    padding: 14px;
+    border-radius: 6px;
+    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     overflow: hidden;
   }
 
-  .filter-section-label {
-    font-size: 9px;
-    font-family: monospace;
-    letter-spacing: 0.18em;
-    color: #334155;
-    text-transform: uppercase;
-  }
-
-  .filter-toggle-row {
+  .fp-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     cursor: pointer;
-    padding: 2px 0;
   }
 
-  .filter-toggle-label {
-    font-size: 12px;
-    color: #94a3b8;
-    font-weight: 500;
+  .fp-label {
+    font-size: 11px;
+    color: #64748b;
+    letter-spacing: 0.06em;
   }
 
   .toggle-switch {
-    width: 34px;
-    height: 18px;
-    border-radius: 9px;
+    width: 28px;
+    height: 15px;
+    border-radius: 8px;
     background: #1a2535;
     border: 1px solid #243040;
     position: relative;
-    transition: background 0.22s, border-color 0.22s;
+    transition: background 0.2s, border-color 0.2s;
     flex-shrink: 0;
   }
 
   .toggle-switch.toggle-on {
-    background: rgba(255, 204, 77, 0.18);
-    border-color: rgba(255, 204, 77, 0.45);
+    background: rgba(255, 204, 77, 0.2);
+    border-color: rgba(255, 204, 77, 0.4);
   }
 
   .toggle-knob {
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 12px;
-    height: 12px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     background: #475569;
-    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.22s;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s;
   }
 
   .toggle-on .toggle-knob {
-    transform: translateX(16px);
+    transform: translateX(13px);
     background: #ffcc4d;
   }
 
-  .filter-divider {
-    height: 1px;
-    background: #1a2535;
-    margin: 0 -2px;
-  }
-
-  .sort-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-  }
-
-  .sort-pill {
+  .fp-selects {
     display: flex;
-    flex-direction: column;
+    gap: 5px;
     align-items: center;
-    gap: 3px;
-    padding: 8px 6px;
-    background: #0f1520;
-    border: 1px solid #1a2535;
-    border-radius: 6px;
-    color: #475569;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    cursor: pointer;
-    transition: all 0.18s;
+  }
+
+  .fp-sort-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .fp-sort-label {
+    font-size: 9px;
+    font-family: monospace;
+    letter-spacing: 0.1em;
+    color: #334155;
     text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
-  .sort-pill:hover {
-    border-color: #334155;
+  .fp-select {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    background: #0a0d14;
+    border: 1px solid #1a2535;
+    border-radius: 4px;
+    color: #64748b;
+    font-size: 10px;
+    font-family: monospace;
+    letter-spacing: 0.04em;
+    padding: 5px 6px;
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .fp-select:hover,
+  .fp-select:focus {
+    border-color: rgba(255, 204, 77, 0.3);
     color: #94a3b8;
-    background: #141c27;
   }
 
-  .sort-pill-active {
-    border-color: rgba(255, 204, 77, 0.45);
-    color: #ffcc4d;
-    background: rgba(255, 204, 77, 0.07);
-    box-shadow: 0 0 12px rgba(255, 204, 77, 0.06);
+  .fp-select option {
+    background: #0a0d14;
+    color: #94a3b8;
   }
 
-  .sort-pill-icon {
-    font-size: 13px;
-    line-height: 1;
+  .fp-count {
+    font-size: 10px;
+    font-family: monospace;
+    color: #2d3f52;
+    letter-spacing: 0.06em;
+    text-align: right;
   }
 
 

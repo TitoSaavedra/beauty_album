@@ -3,6 +3,12 @@ use tauri::State;
 
 use crate::state::DbPool;
 
+const LOGS_GET: &str = include_str!("SQL/logs_get.sql");
+const LOGS_STATS_TOTAL: &str = include_str!("SQL/logs_stats_total.sql");
+const LOGS_STATS_ERRORS: &str = include_str!("SQL/logs_stats_errors.sql");
+const LOGS_STATS_BY_SOURCE: &str = include_str!("SQL/logs_stats_by_source.sql");
+const LOGS_STATS_BY_TAG: &str = include_str!("SQL/logs_stats_by_tag.sql");
+
 #[tauri::command]
 pub async fn get_logs(
     tag: Option<String>,
@@ -15,41 +21,23 @@ pub async fn get_logs(
     let limit = limit.unwrap_or(100);
     let offset = offset.unwrap_or(0);
 
-    let rows = match (tag.as_deref(), source.as_deref()) {
-        (Some(t), Some(s)) => sqlx::query(
-            "SELECT id, ts, tag, source, msg FROM logs WHERE tag=? AND source=? ORDER BY ts DESC LIMIT ? OFFSET ?",
-        )
-        .bind(t).bind(s).bind(limit).bind(offset)
-        .fetch_all(pool).await,
-        (Some(t), None) => sqlx::query(
-            "SELECT id, ts, tag, source, msg FROM logs WHERE tag=? ORDER BY ts DESC LIMIT ? OFFSET ?",
-        )
-        .bind(t).bind(limit).bind(offset)
-        .fetch_all(pool).await,
-        (None, Some(s)) => sqlx::query(
-            "SELECT id, ts, tag, source, msg FROM logs WHERE source=? ORDER BY ts DESC LIMIT ? OFFSET ?",
-        )
-        .bind(s).bind(limit).bind(offset)
-        .fetch_all(pool).await,
-        (None, None) => sqlx::query(
-            "SELECT id, ts, tag, source, msg FROM logs ORDER BY ts DESC LIMIT ? OFFSET ?",
-        )
+    let rows = sqlx::query(LOGS_GET)
+        .bind(&tag).bind(&tag)
+        .bind(&source).bind(&source)
         .bind(limit).bind(offset)
-        .fetch_all(pool).await,
-    }
-    .map_err(|e| e.to_string())?;
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(rows
         .iter()
-        .map(|r| {
-            serde_json::json!({
-                "id":     r.get::<i64, _>("id"),
-                "ts":     r.get::<i64, _>("ts"),
-                "tag":    r.get::<String, _>("tag"),
-                "source": r.get::<String, _>("source"),
-                "msg":    r.get::<String, _>("msg"),
-            })
-        })
+        .map(|r| serde_json::json!({
+            "id":     r.get::<i64, _>("id"),
+            "ts":     r.get::<i64, _>("ts"),
+            "tag":    r.get::<String, _>("tag"),
+            "source": r.get::<String, _>("source"),
+            "msg":    r.get::<String, _>("msg"),
+        }))
         .collect())
 }
 
@@ -57,29 +45,17 @@ pub async fn get_logs(
 pub async fn get_log_stats(db: State<'_, DbPool>) -> Result<serde_json::Value, String> {
     let pool = db.0.get().ok_or("Database not initialized")?;
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM logs")
-        .fetch_one(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    let total: i64 = sqlx::query_scalar(LOGS_STATS_TOTAL)
+        .fetch_one(pool).await.map_err(|e| e.to_string())?;
 
-    let errors: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM logs WHERE tag='ERR'")
-        .fetch_one(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    let errors: i64 = sqlx::query_scalar(LOGS_STATS_ERRORS)
+        .fetch_one(pool).await.map_err(|e| e.to_string())?;
 
-    let sources = sqlx::query(
-        "SELECT source, COUNT(*) as n FROM logs GROUP BY source ORDER BY n DESC",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let sources = sqlx::query(LOGS_STATS_BY_SOURCE)
+        .fetch_all(pool).await.map_err(|e| e.to_string())?;
 
-    let tags = sqlx::query(
-        "SELECT tag, COUNT(*) as n FROM logs GROUP BY tag ORDER BY n DESC",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let tags = sqlx::query(LOGS_STATS_BY_TAG)
+        .fetch_all(pool).await.map_err(|e| e.to_string())?;
 
     Ok(serde_json::json!({
         "total": total,

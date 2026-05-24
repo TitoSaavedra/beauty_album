@@ -33,9 +33,12 @@ pub async fn sync_popular(
 }
 
 #[tauri::command]
-pub async fn get_popular_classes(db: State<'_, DbPool>) -> Result<Vec<serde_json::Value>, String> {
+pub async fn get_popular_classes(
+    #[allow(non_snake_case)] sinceTs: Option<i64>,
+    db: State<'_, DbPool>,
+) -> Result<Vec<serde_json::Value>, String> {
     let pool = db.0.get().ok_or("Database not initialized")?;
-    album_service::get_classes_for_popular(pool)
+    album_service::get_classes_for_popular(pool, sinceTs.unwrap_or(0))
         .await
         .map_err(|e| e.to_string())
 }
@@ -44,6 +47,8 @@ pub async fn get_popular_classes(db: State<'_, DbPool>) -> Result<Vec<serde_json
 pub async fn get_popular_presets(
     class_name: String,
     #[allow(non_snake_case)] sortBy: Option<String>,
+    search: Option<String>,
+    #[allow(non_snake_case)] sinceTs: Option<i64>,
     offset: Option<i64>,
     limit: Option<i64>,
     state: State<'_, AppState>,
@@ -61,11 +66,24 @@ pub async fn get_popular_presets(
         &presets_dir,
         &class_name,
         sortBy.as_deref().unwrap_or("downloads"),
+        search.as_deref().unwrap_or(""),
+        sinceTs.unwrap_or(0),
         offset.unwrap_or(0),
         limit.unwrap_or(50),
     )
     .await
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_popular_stats(
+    class_name: String,
+    db: State<'_, DbPool>,
+) -> Result<serde_json::Value, String> {
+    let pool = db.0.get().ok_or("Database not initialized")?;
+    album_service::get_popular_stats(pool, &class_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
