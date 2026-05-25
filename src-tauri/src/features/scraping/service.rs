@@ -12,6 +12,14 @@ use crate::core::state::{AppState, DbPool, ScrapperCancelToken};
 use crate::core::events::{self, ScrapperProgress};
 use crate::features::scraping::{garmoth::{GarmothClient, GarmothPreset}, browser, image};
 
+const UPDATE_PRESET_IS_OK: &str = include_str!("sql/scraper_update_is_ok.sql");
+const SELECT_OK_EXISTS: &str = include_str!("sql/scraper_ok_exists.sql");
+const SELECT_COUNT_OK: &str = include_str!("sql/scraper_count_ok.sql");
+const UPDATE_IMAGE_BOTH: &str = include_str!("sql/scraper_update_image_both.sql");
+const UPDATE_IMAGE_ONE: &str = include_str!("sql/scraper_update_image_one.sql");
+const RESET_PRESET: &str = include_str!("sql/scraper_reset_preset.sql");
+const INSERT_PRESET: &str = include_str!("sql/scraper_insert_preset.sql");
+
 struct PendingPreset {
     preset_id: u64,
     class_hint: String,
@@ -63,7 +71,7 @@ fn scan_recursive(dir: &Path, result: &mut Vec<PendingPreset>) {
 }
 
 async fn ok_exists_db(pool: &SqlitePool, preset_id: u64) -> bool {
-    sqlx::query("SELECT EXISTS(SELECT 1 FROM presets WHERE id=? AND is_ok=1 AND is_popular=0)")
+    sqlx::query(SELECT_OK_EXISTS)
         .bind(preset_id as i64)
         .fetch_one(pool)
         .await
@@ -93,14 +101,12 @@ async fn process_image(
     total: usize,
 ) -> (bool, bool) {
     let Some(img1) = &meta.image_1 else {
-        let _ = sqlx::query("UPDATE presets SET is_ok=1, updated_at=? WHERE id=?")
+        let _ = sqlx::query(UPDATE_PRESET_IS_OK)
             .bind(chrono::Local::now().timestamp())
             .bind(meta.preset.preset_id as i64)
             .execute(pool)
             .await;
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM presets WHERE class_id=? AND is_ok=1 AND is_popular=0"
-        )
+        let count: i64 = sqlx::query_scalar(SELECT_COUNT_OK)
         .bind(meta.data.class as i64)
         .fetch_one(pool)
         .await
@@ -142,7 +148,27 @@ async fn process_image(
     ).await;
 
     if !got {
-        return (false, false);
+        let _ = sqlx::query(UPDATE_PRESET_IS_OK)
+            .bind(chrono::Local::now().timestamp())
+            .bind(meta.preset.preset_id as i64)
+            .execute(pool)
+            .await;
+        let count: i64 = sqlx::query_scalar(SELECT_COUNT_OK)
+        .bind(meta.data.class as i64)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+        events::emit_class_count_updated(app, meta.data.class, count, false);
+        events::emit_progress(app, ScrapperProgress {
+            preset_id: meta.preset.preset_id.to_string(),
+            status: "done".to_string(),
+            message: format!("Synced {} (no image)", meta.preset.preset_id),
+            class_name: meta.preset.class_hint.clone(),
+            class_id: meta.data.class,
+            current,
+            total,
+        });
+        return (true, false);
     }
 
     let img2_saved = if let Some(img2) = &meta.image_2 {
@@ -153,7 +179,7 @@ async fn process_image(
 
     let now = chrono::Local::now().timestamp();
     if img2_saved {
-        let _ = sqlx::query("UPDATE presets SET image_1=?, image_2=?, is_ok=1, updated_at=? WHERE id=?")
+        let _ = sqlx::query(UPDATE_IMAGE_BOTH)
             .bind(img1.as_str())
             .bind(meta.image_2.as_deref().unwrap())
             .bind(now)
@@ -161,7 +187,7 @@ async fn process_image(
             .execute(pool)
             .await;
     } else {
-        let _ = sqlx::query("UPDATE presets SET image_1=?, is_ok=1, updated_at=? WHERE id=?")
+        let _ = sqlx::query(UPDATE_IMAGE_ONE)
             .bind(img1.as_str())
             .bind(now)
             .bind(meta.preset.preset_id as i64)
@@ -274,9 +300,7 @@ pub async fn run(
             let _ = tokio::fs::copy(&preset.pab_path, preset_dir.join(&pab_filename)).await;
 
             let now_pre = chrono::Local::now().timestamp();
-            let _ = sqlx::query(
-                "UPDATE presets SET is_popular=0, is_ok=0, pab_file=?, updated_at=? WHERE id=?"
-            )
+            let _ = sqlx::query(RESET_PRESET)
             .bind(&pab_filename)
             .bind(now_pre)
             .bind(preset.preset_id as i64)
@@ -311,12 +335,7 @@ pub async fn run(
             let raw_json = serde_json::to_string(&raw).unwrap_or_default();
             let now = chrono::Local::now().timestamp();
 
-            let _ = sqlx::query(
-                "INSERT OR REPLACE INTO presets
-                 (id, class_id, title, user_nickname, character_name, downloads, views, likes,
-                  image_2, pab_file, created_at, updated_at, is_ok, is_popular, raw_json)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)"
-            )
+            let _ = sqlx::query(INSERT_PRESET)
             .bind(data.id as i64)
             .bind(data.class as i64)
             .bind(&data.title)

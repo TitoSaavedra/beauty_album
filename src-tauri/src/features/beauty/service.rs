@@ -5,11 +5,11 @@ use sqlx::{Row, SqlitePool};
 
 use crate::core::errors::AppError;
 
-const ALBUM_GET_CLASSES_PRESETS: &str = include_str!("../../services/presets/SQL/album_get_classes_presets.sql");
-const ALBUM_GET_CLASSES_POPULAR: &str = include_str!("../../services/presets/SQL/album_get_classes_popular.sql");
-const ALBUM_GET_PRESETS: &str = include_str!("../../services/presets/SQL/album_get_presets.sql");
-const ALBUM_GET_POPULAR_PRESETS: &str = include_str!("../../services/presets/SQL/album_get_popular_presets.sql");
-const ALBUM_GET_POPULAR_STATS: &str = include_str!("../../services/presets/SQL/album_get_popular_stats.sql");
+const ALBUM_GET_CLASSES_PRESETS: &str = include_str!("../../services/presets/sql/album_get_classes_presets.sql");
+const ALBUM_GET_CLASSES_POPULAR: &str = include_str!("../../services/presets/sql/album_get_classes_popular.sql");
+const ALBUM_GET_PRESETS: &str = include_str!("../../services/presets/sql/album_get_presets.sql");
+const ALBUM_GET_POPULAR_PRESETS: &str = include_str!("../../services/presets/sql/album_get_popular_presets.sql");
+const ALBUM_GET_POPULAR_STATS: &str = include_str!("../../services/presets/sql/album_get_popular_stats.sql");
 
 pub async fn get_classes_for_presets(pool: &SqlitePool) -> Result<Vec<serde_json::Value>, AppError> {
     get_classes_query(pool, ALBUM_GET_CLASSES_PRESETS).await

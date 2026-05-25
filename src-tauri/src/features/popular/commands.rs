@@ -7,14 +7,15 @@ use crate::features::beauty::service as album_service;
 use crate::features::popular::service;
 use crate::core::state::{AppState, DbPool, ScrapperCancelToken};
 
-const POPULAR_GET_WANTED: &str     = include_str!("../../services/presets/SQL/popular_get_wanted.sql");
-const POPULAR_WANTED_CLEAR: &str   = include_str!("../../services/presets/SQL/popular_wanted_clear.sql");
-const POPULAR_WANTED_SET: &str     = include_str!("../../services/presets/SQL/popular_wanted_set.sql");
-const POPULAR_WANTED_GET: &str     = include_str!("../../services/presets/SQL/popular_wanted_get.sql");
-const POPULAR_WANTED_TOGGLE: &str  = include_str!("../../services/presets/SQL/popular_wanted_toggle.sql");
-const POPULAR_DISCARD: &str        = include_str!("../../services/presets/SQL/popular_discard.sql");
-const CLASSES_GET_FAVORITES: &str  = include_str!("../../services/presets/SQL/classes_get_favorites.sql");
-const CLASSES_SET_FAVORITE: &str   = include_str!("../../services/presets/SQL/classes_set_favorite.sql");
+const POPULAR_GET_WANTED: &str     = include_str!("../../services/presets/sql/popular_get_wanted.sql");
+const POPULAR_GET_REGIONS: &str    = include_str!("sql/popular_get_regions.sql");
+const POPULAR_WANTED_CLEAR: &str   = include_str!("../../services/presets/sql/popular_wanted_clear.sql");
+const POPULAR_WANTED_SET: &str     = include_str!("../../services/presets/sql/popular_wanted_set.sql");
+const POPULAR_WANTED_GET: &str     = include_str!("../../services/presets/sql/popular_wanted_get.sql");
+const POPULAR_WANTED_TOGGLE: &str  = include_str!("../../services/presets/sql/popular_wanted_toggle.sql");
+const POPULAR_DISCARD: &str        = include_str!("../../services/presets/sql/popular_discard.sql");
+const CLASSES_GET_FAVORITES: &str  = include_str!("../../services/presets/sql/classes_get_favorites.sql");
+const CLASSES_SET_FAVORITE: &str   = include_str!("../../services/presets/sql/classes_set_favorite.sql");
 
 #[tauri::command]
 pub async fn sync_popular(
@@ -117,7 +118,7 @@ pub async fn get_popular_stats(
 #[tauri::command]
 pub async fn get_popular_regions(db: State<'_, DbPool>) -> Result<Vec<String>, String> {
     let pool = db.0.get().ok_or("Database not initialized")?;
-    let rows = sqlx::query("SELECT DISTINCT region FROM presets WHERE is_popular = 1 AND region IS NOT NULL ORDER BY region")
+    let rows = sqlx::query(POPULAR_GET_REGIONS)
         .fetch_all(pool)
         .await
         .map_err(|e| e.to_string())?;

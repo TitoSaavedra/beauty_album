@@ -242,5 +242,5 @@
 </div>
 
 <style lang="scss">
-  @import './ClassList.scss';
+  @use './ClassList.scss';
 </style>

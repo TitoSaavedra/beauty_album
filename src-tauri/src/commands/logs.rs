@@ -3,11 +3,11 @@ use tauri::State;
 
 use crate::core::state::DbPool;
 
-const LOGS_GET: &str = include_str!("SQL/logs_get.sql");
-const LOGS_STATS_TOTAL: &str = include_str!("SQL/logs_stats_total.sql");
-const LOGS_STATS_ERRORS: &str = include_str!("SQL/logs_stats_errors.sql");
-const LOGS_STATS_BY_SOURCE: &str = include_str!("SQL/logs_stats_by_source.sql");
-const LOGS_STATS_BY_TAG: &str = include_str!("SQL/logs_stats_by_tag.sql");
+const LOGS_GET: &str = include_str!("sql/logs_get.sql");
+const LOGS_STATS_TOTAL: &str = include_str!("sql/logs_stats_total.sql");
+const LOGS_STATS_ERRORS: &str = include_str!("sql/logs_stats_errors.sql");
+const LOGS_STATS_BY_SOURCE: &str = include_str!("sql/logs_stats_by_source.sql");
+const LOGS_STATS_BY_TAG: &str = include_str!("sql/logs_stats_by_tag.sql");
 
 #[tauri::command]
 pub async fn get_logs(

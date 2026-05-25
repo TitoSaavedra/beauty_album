@@ -12,10 +12,10 @@ use crate::core::events;
 use crate::services::scraping::{garmoth_client::GarmothClient, image, playwright_service};
 use crate::core::events::ScrapperProgress;
 
-const POPULAR_GET_SYNCED_IDS: &str = include_str!("SQL/popular_get_synced_ids.sql");
-const POPULAR_INSERT_PRESET: &str = include_str!("SQL/popular_insert_preset.sql");
-const POPULAR_UPDATE_IMAGE_OK: &str = include_str!("SQL/popular_update_image_ok.sql");
-const POPULAR_UPDATE_NO_IMAGE_OK: &str = include_str!("SQL/popular_update_no_image_ok.sql");
+const POPULAR_GET_SYNCED_IDS: &str = include_str!("sql/popular_get_synced_ids.sql");
+const POPULAR_INSERT_PRESET: &str = include_str!("sql/popular_insert_preset.sql");
+const POPULAR_UPDATE_IMAGE_OK: &str = include_str!("sql/popular_update_image_ok.sql");
+const POPULAR_UPDATE_NO_IMAGE_OK: &str = include_str!("sql/popular_update_no_image_ok.sql");
 
 pub const DAYS_ALL: &[&str] = &["20", "30", "60", "90", "180", "365", "ever"];
 const REGIONS: &[&str] = &["eu", "na", "ru", "jp", "kr", "tw", "sa", "sea", "asia", "mena"];
