@@ -3,7 +3,7 @@ use std::path::Path;
 use chrono::{TimeZone, Utc};
 use sqlx::{Row, SqlitePool};
 
-use crate::errors::AppError;
+use crate::core::errors::AppError;
 
 const ALBUM_GET_CLASSES_PRESETS: &str = include_str!("SQL/album_get_classes_presets.sql");
 const ALBUM_GET_CLASSES_POPULAR: &str = include_str!("SQL/album_get_classes_popular.sql");

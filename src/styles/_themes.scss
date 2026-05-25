@@ -1,0 +1,121 @@
+[data-theme="light"] {
+  /* ===== BACKGROUNDS & SURFACES ===== */
+
+  --color-bg-base: #ffffff;
+  --color-bg-surface: #f5f7fa;
+  --color-bg-elevated: #eef1f7;
+  --color-bg-skeleton: #dce4ee;
+  --color-bg-deeper: #f0f4fa;
+  --color-bg-deepest: #f5f7fa;
+  --color-bg-panel: #ffffff;
+  --color-bg-input: #f8fafd;
+  --color-bg-hover: #e8ecf5;
+  --color-bg-card: #f5f7fa;
+  --color-bg-footer: #f0f4fa;
+  --color-bg-container: #eef1f7;
+  --color-bg-section: #f8fafd;
+
+  --color-modal-bg: #ffffff;
+  --color-modal-panel-left: #f5f7fa;
+  --color-modal-panel-right: #ffffff;
+  --color-bg-glass: rgba(255, 255, 255, 0.95);
+
+  /* ===== TEXT & TYPOGRAPHY ===== */
+
+  --color-text-primary: #1a1f36;
+  --color-text-secondary: #4a5568;
+  --color-text-muted: #8892a8;
+  --color-text-bright: #0f1419;
+  --color-text-error: #d32f2f;
+  --color-text-on-dark: #f0f4fa;
+
+  /* ===== BORDERS & DIVIDERS ===== */
+
+  --color-border: #d4dce8;
+  --color-border-subtle: #e8ecf5;
+  --color-border-hover: #8892a8;
+  --color-modal-border: #d4dce8;
+  --color-border-light: #e8ecf5;
+  --color-border-deep: #c8d0e0;
+  --color-border-darker: #bcc4d4;
+
+  /* ===== ACCENT & BRAND COLORS ===== */
+
+  --color-accent: #1f7bae;
+  --color-accent-rgb: 31, 123, 174;
+  --color-accent-primary: #1f7bae;
+  --color-accent-primary-hover: #15577a;
+  --color-accent-gradient: #1565a0;
+
+  --color-accent-secondary: #0891b2;
+  --color-accent-tertiary: #6d28d9;
+  --color-accent-quaternary: #7c3aed;
+  --color-accent-quaternary-rgb: 124, 58, 237;
+
+
+  /* ===== SEMANTIC STATUS COLORS ===== */
+
+  --color-status-success: #2e7d32;
+  --color-status-success-light: #43a047;
+  --color-status-success-lighter: #66bb6a;
+
+  --color-status-warning: #d97706;
+  --color-status-warning-light: #f59e0b;
+  --color-status-warning-lighter: #fbbf24;
+  --color-status-warning-lightest: #fde68a;
+
+  --color-status-error: #d32f2f;
+  --color-error: #d32f2f;
+  --color-error-rgb: 211, 47, 47;
+  --color-status-error-light: #e53935;
+  --color-status-error-lighter: #ef5350;
+
+  --color-status-info: #1565c0;
+  --color-status-info-light: #1976d2;
+
+  --color-cyan: #0891b2;
+  --color-purple: #6d28d9;
+
+  /* ===== COMPONENT-SPECIFIC COLORS ===== */
+
+  --color-favorite-icon: #c41e7b;
+  --color-favorite-text: #f06ba8;
+  --color-favorite-active: #c2185b;
+  --color-favorite-active-hover: #e91e63;
+  --color-favorite-stat: #c41e7b;
+  --color-favorite-stat-hover: #e91e63;
+
+  --color-btn-text-on-accent: #ffffff;
+  --color-btn-text: #4a5568;
+
+  /* ===== LOG TAG COLORS ===== */
+
+  --color-log-err: #d32f2f;
+  --color-log-warn: #f59e0b;
+  --color-log-user: #1976d2;
+  --color-log-pop: #0891b2;
+  --color-log-sync: #0891b2;
+  --color-log-watch: #0891b2;
+  --color-log-init: #6d28d9;
+  --color-log-info: #4a5568;
+  --color-log-default: #4a5568;
+
+  /* ===== TOAST COLORS ===== */
+
+  --color-toast-success: #2e7d32;
+  --color-toast-success-light: #43a047;
+  --color-toast-success-lighter: #66bb6a;
+  --color-toast-warning: #f59e0b;
+  --color-toast-warning-light: #fbbf24;
+  --color-toast-error: #d32f2f;
+
+  /* ===== MISC ===== */
+
+  --color-scrollbar: #bcc4d4;
+
+  --color-overlay-light: rgba(0, 0, 0, 0.03);
+  --color-overlay-dark: rgba(0, 0, 0, 0.15);
+}
+
+/* Future theme definitions can be added here */
+/* [data-theme="custom"] { ... } */

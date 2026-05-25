@@ -1,7 +1,8 @@
 use tauri::{AppHandle, Manager, State};
 
-use crate::services::{config::config_service, db, events, scraping::scrapper_service};
-use crate::state::{AppConfig, AppState, DbPool};
+use crate::services::{config::config_service, db};
+use crate::core::state::{AppConfig, AppState, DbPool};
+use crate::core::events;
 
 #[tauri::command]
 pub fn get_config(state: State<AppState>) -> Result<AppConfig, String> {

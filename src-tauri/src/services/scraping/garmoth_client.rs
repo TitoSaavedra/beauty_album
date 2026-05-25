@@ -1,7 +1,7 @@
 use reqwest::header::{self, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 
-use crate::errors::AppError;
+use crate::core::errors::AppError;
 
 const API_BASE: &str = "https://api.garmoth.com";
 
@@ -69,11 +69,11 @@ impl GarmothClient {
         Ok((typed, raw))
     }
 
-    pub async fn fetch_popular(&self, class_id: Option<u32>, days: &str) -> Result<Vec<serde_json::Value>, AppError> {
+    pub async fn fetch_popular(&self, class_id: Option<u32>, days: &str, region: &str) -> Result<Vec<serde_json::Value>, AppError> {
         let class_param = class_id.map_or_else(|| "all".to_string(), |id| id.to_string());
         let url = format!(
-            "{}/api/beauty-album/search-advanced?class={}&past={}&region=all&sort=popular&limit=100",
-            API_BASE, class_param, days
+            "{}/api/beauty-album/search-advanced?class={}&past={}&region={}&sort=popular&limit=100",
+            API_BASE, class_param, days, region
         );
         let bytes = self.api_client
             .get(&url)

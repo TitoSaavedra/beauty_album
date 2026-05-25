@@ -6,13 +6,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use sqlx::{Row, SqlitePool};
 use tauri::AppHandle;
 
-use crate::errors::AppError;
-use crate::services::{
-    events,
-    log::Logger,
-    scraping::{garmoth_client::GarmothClient, image, playwright_service},
-};
-use crate::services::scraping::scrapper_service::ScrapperProgress;
+use crate::core::errors::AppError;
+use crate::core::logger::Logger;
+use crate::core::events;
+use crate::services::scraping::{garmoth_client::GarmothClient, image, playwright_service};
+use crate::core::events::ScrapperProgress;
 
 const POPULAR_GET_SYNCED_IDS: &str = include_str!("SQL/popular_get_synced_ids.sql");
 const POPULAR_INSERT_PRESET: &str = include_str!("SQL/popular_insert_preset.sql");
@@ -20,7 +18,7 @@ const POPULAR_UPDATE_IMAGE_OK: &str = include_str!("SQL/popular_update_image_ok.
 const POPULAR_UPDATE_NO_IMAGE_OK: &str = include_str!("SQL/popular_update_no_image_ok.sql");
 
 pub const DAYS_ALL: &[&str] = &["20", "30", "60", "90", "180", "365", "ever"];
-pub const DAYS_PER_CLASS: &[&str] = &["180", "365", "ever"];
+const REGIONS: &[&str] = &["eu", "na", "ru", "jp", "kr", "tw", "sa", "sea", "asia", "mena"];
 
 /// Loads id_garmoth → display name map for directory/log display only.
 async fn load_display_map(pool: &SqlitePool) -> HashMap<u32, String> {
@@ -46,11 +44,12 @@ async fn fetch_all(
     let mut seen: HashMap<u64, serde_json::Value> = HashMap::new();
     let mut total_raw = 0usize;
 
+    // Phase 1: class=all, each day, region=all
     let mut handles = Vec::new();
     for &days in DAYS_ALL {
         let c = Arc::clone(&client);
         let d = days.to_string();
-        handles.push((days, tokio::spawn(async move { c.fetch_popular(None, &d).await })));
+        handles.push((days, tokio::spawn(async move { c.fetch_popular(None, &d, "all").await })));
     }
     for (days, handle) in handles {
         match handle.await {
@@ -65,16 +64,18 @@ async fn fetch_all(
             Err(e)     => log.tag("ERR", &format!("all/{} panicked: {}", days, e)).await,
         }
     }
+    log.tag("POP", &format!("Phase 1 done — unique so far: {}", seen.len())).await;
 
+    // Phase 2: each class, each day, region=all
     let class_ids: Vec<(u32, String)> = display_map.iter().map(|(&id, n)| (id, n.clone())).collect();
     let mut handles2 = Vec::new();
     for (garmoth_id, class_name) in &class_ids {
-        for &days in DAYS_PER_CLASS {
+        for &days in DAYS_ALL {
             let c = Arc::clone(&client);
             let d = days.to_string();
             let gid = *garmoth_id;
             let label = format!("{}/{}", class_name, days);
-            handles2.push((label, tokio::spawn(async move { c.fetch_popular(Some(gid), &d).await })));
+            handles2.push((label, tokio::spawn(async move { c.fetch_popular(Some(gid), &d, "all").await })));
         }
     }
     let mut phase2_raw = 0usize;
@@ -94,7 +95,40 @@ async fn fetch_all(
             Err(e)     => log.tag("ERR", &format!("{} panicked: {}", label, e)).await,
         }
     }
-    log.tag("POP", &format!("Phase 2 done — raw: {}  unique: {}", phase2_raw, seen.len())).await;
+    log.tag("POP", &format!("Phase 2 done — raw: {}  unique so far: {}", phase2_raw, seen.len())).await;
+
+    // Phase 3: each class, each day, each region
+    let mut handles3 = Vec::new();
+    for (garmoth_id, class_name) in &class_ids {
+        for &days in DAYS_ALL {
+            for &region in REGIONS {
+                let c = Arc::clone(&client);
+                let d = days.to_string();
+                let r = region.to_string();
+                let gid = *garmoth_id;
+                let label = format!("{}/{}/{}", class_name, days, region);
+                handles3.push((label, tokio::spawn(async move { c.fetch_popular(Some(gid), &d, &r).await })));
+            }
+        }
+    }
+    let mut phase3_raw = 0usize;
+    for (label, handle) in handles3 {
+        match handle.await {
+            Ok(Ok(items)) => {
+                phase3_raw += items.len();
+                total_raw += items.len();
+                if !items.is_empty() {
+                    log.tag("POP", &format!("{} → {} results", label, items.len())).await;
+                }
+                for item in items {
+                    if let Some(id) = item["id"].as_u64() { seen.entry(id).or_insert(item); }
+                }
+            }
+            Ok(Err(e)) => log.tag("ERR", &format!("{} failed: {}", label, e)).await,
+            Err(e)     => log.tag("ERR", &format!("{} panicked: {}", label, e)).await,
+        }
+    }
+    log.tag("POP", &format!("Phase 3 done — raw: {}  unique total: {}", phase3_raw, seen.len())).await;
 
     (seen, total_raw)
 }
@@ -268,9 +302,22 @@ pub async fn sync_popular(
         .filter(|item| !synced_ids.contains(&(item["id"].as_u64().unwrap_or(0) as i64)))
         .collect();
     let already_done = synced_ids.len();
-    let total = unique.len();
 
-    log.tag("POP", &format!("Raw: {}  Already synced: {}  To process: {}", total_raw, already_done, total)).await;
+    let pending_rows = sqlx::query(
+        "SELECT raw_json FROM presets WHERE is_popular = 1 AND is_ok = 0 AND raw_json IS NOT NULL"
+    ).fetch_all(pool).await.unwrap_or_default();
+    let unique_ids: std::collections::HashSet<u64> =
+        unique.iter().filter_map(|i| i["id"].as_u64()).collect();
+    let extra: Vec<serde_json::Value> = pending_rows.iter()
+        .filter_map(|row| serde_json::from_str(row.get::<&str, _>(0)).ok())
+        .filter(|item: &serde_json::Value| item["id"].as_u64().map_or(false, |id| !unique_ids.contains(&id)))
+        .collect();
+
+    let to_download: Vec<serde_json::Value> = unique.iter().cloned().chain(extra).collect();
+    let total = to_download.len();
+
+    log.tag("POP", &format!("Raw: {}  Already synced: {}  New: {}  Pending retry: {}  To download: {}",
+        total_raw, already_done, unique.len(), pending_rows.len(), total)).await;
 
     if total == 0 {
         log.tag("POP", "All presets already synced").await;
@@ -279,8 +326,8 @@ pub async fn sync_popular(
 
     let now = chrono::Local::now().timestamp();
     let inserted = insert_pending(pool, &unique, &log, now).await;
-    if inserted == 0 {
-        log.tag("WARN", "No presets inserted — DB may have issues, attempting download of existing pending").await;
+    if inserted == 0 && unique.is_empty() {
+        log.tag("WARN", "No new presets from API — retrying pending only").await;
     }
 
     log.tag("POP", "Starting browser session").await;
@@ -293,7 +340,7 @@ pub async fn sync_popular(
     };
 
     let (n_done, n_copy, n_download, n_err) =
-        download_all(app, &browser, pool, popular_dir, &log, unique, &display_map, cancel, total).await;
+        download_all(app, &browser, pool, popular_dir, &log, to_download, &display_map, cancel, total).await;
 
     let msg = format!(
         "Popular sync done — {} synced ({} copied, {} downloaded)  {} already done  {} error(s)",

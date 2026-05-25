@@ -1,7 +1,7 @@
 use sqlx::Row;
 use tauri::State;
 
-use crate::state::DbPool;
+use crate::core::state::DbPool;
 
 const LOGS_GET: &str = include_str!("SQL/logs_get.sql");
 const LOGS_STATS_TOTAL: &str = include_str!("SQL/logs_stats_total.sql");

@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::services::scraping::scrapper_service::ScrapperProgress;
+use crate::core::events::ScrapperProgress;
 
 #[derive(Serialize, Clone)]
 pub struct ClassInitProgress {

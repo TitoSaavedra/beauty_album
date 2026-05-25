@@ -7,20 +7,13 @@ use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use tauri::{AppHandle, Manager};
 
-use crate::errors::AppError;
-use crate::services::{events, log::Logger, scraping::{garmoth_client::{GarmothClient, GarmothPreset}, playwright_service, image}};
-use crate::state::{AppState, DbPool};
+use crate::core::errors::AppError;
+use crate::core::logger::Logger;
+use crate::core::state::{AppState, DbPool};
+use crate::core::events;
+use crate::services::scraping::{garmoth_client::{GarmothClient, GarmothPreset}, playwright_service, image};
 
-#[derive(Serialize, Clone)]
-pub struct ScrapperProgress {
-    pub preset_id: String,
-    pub status: String,
-    pub message: String,
-    pub class_name: String,
-    pub class_id: u32,
-    pub current: usize,
-    pub total: usize,
-}
+// ScrapperProgress is defined in crate::core::events
 
 struct PendingPreset {
     preset_id: u64,

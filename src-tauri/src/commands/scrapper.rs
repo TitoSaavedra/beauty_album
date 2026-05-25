@@ -1,8 +1,9 @@
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, State};
 
-use crate::services::{log::Logger, scraping::scrapper_service};
-use crate::state::{AppState, DbPool, ScrapperCancelToken};
+use crate::core::logger::Logger;
+use crate::services::scraping::scrapper_service;
+use crate::core::state::{AppState, DbPool, ScrapperCancelToken};
 
 #[tauri::command]
 pub async fn run_scrapper(

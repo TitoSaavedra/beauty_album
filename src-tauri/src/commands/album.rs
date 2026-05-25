@@ -1,7 +1,8 @@
 use tauri::State;
 
-use crate::services::{log::Logger, presets::album_service};
-use crate::state::{AppState, DbPool};
+use crate::core::logger::Logger;
+use crate::services::presets::album_service;
+use crate::core::state::{AppState, DbPool};
 
 #[tauri::command]
 pub fn is_db_ready(db: State<'_, DbPool>) -> bool {

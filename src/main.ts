@@ -1,4 +1,8 @@
 import './styles/app.css';
-import App from './App.svelte';
+import { waitLocale } from 'svelte-i18n';
+import App from './app/App.svelte';
+import './i18n';
 
-new App({ target: document.getElementById('app')! });
+waitLocale().then(() => {
+  new App({ target: document.getElementById('app')! });
+});

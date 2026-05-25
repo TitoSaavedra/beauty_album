@@ -9,5 +9,6 @@ WHERE c.display = ?
   AND p.is_ok = 1
   AND (? = 0 OR p.created_at >= ?)
   AND (? = '' OR p.title LIKE ? OR p.user_nickname LIKE ?)
+  AND (? = '' OR p.region = ?)
 ORDER BY p.{order_col} DESC
 LIMIT ? OFFSET ?

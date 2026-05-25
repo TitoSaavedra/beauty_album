@@ -4,7 +4,7 @@ use sqlx::Row;
 use tauri::{AppHandle, State};
 
 use crate::services::presets::{album_service, popular_service};
-use crate::state::{AppState, DbPool, ScrapperCancelToken};
+use crate::core::state::{AppState, DbPool, ScrapperCancelToken};
 
 const POPULAR_GET_WANTED: &str     = include_str!("../services/presets/SQL/popular_get_wanted.sql");
 const POPULAR_WANTED_CLEAR: &str   = include_str!("../services/presets/SQL/popular_wanted_clear.sql");

@@ -1,18 +1,18 @@
-mod commands;
-mod errors;
-pub mod services;
-pub mod state;
+mod core;
+mod features;
 
-use commands::album::{get_classes, get_presets, inject_preset, is_db_ready, open_file, open_logs, open_url};
-use commands::config::{get_config, save_config};
-use commands::logs::{get_log_stats, get_logs};
-use commands::popular::{
-    discard_preset, get_class_favorites, get_popular_classes, get_popular_presets, get_popular_stats,
-    get_wanted, set_class_favorite, set_wanted, sync_popular, toggle_wanted,
+use features::beauty::commands::{get_classes, get_presets, inject_preset, is_db_ready, open_file, open_logs, open_url};
+use features::config::commands::{get_config, save_config};
+use features::logs::commands::{get_log_stats, get_logs};
+use features::popular::commands::{
+    discard_preset, get_class_favorites, get_popular_classes, get_popular_presets, get_popular_regions,
+    get_popular_stats, get_wanted, set_class_favorite, set_wanted, sync_popular, toggle_wanted,
 };
-use commands::scrapper::{check_pending, run_scrapper, stop_scrapper};
-use services::{config::config_service, db, scraping::scrapper_service};
-use state::{AppState, DbPool, ScrapperCancelToken};
+use features::scraping::commands::{check_pending, run_scrapper, stop_scrapper};
+use core::state::{AppState, DbPool, ScrapperCancelToken};
+use features::config::service as config_service;
+use core::db;
+use features::scraping::service as scrapper_service;
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -20,7 +20,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            services::log::init(app.handle());
+            core::logger::init(app.handle());
             let initial_config = config_service::load(app.handle());
             app.manage(AppState(Mutex::new(initial_config)));
             app.manage(ScrapperCancelToken::default());
@@ -53,10 +53,10 @@ pub fn run() {
                         Ok(pool) => {
                             let db_state = app_handle.state::<DbPool>();
                             let _ = db_state.0.set(pool);
-                            services::events::emit_db_ready(&app_handle, true);
+                            core::events::emit_db_ready(&app_handle, true);
                         }
                         Err(e) => {
-                            services::events::emit_db_ready(&app_handle, false);
+                            core::events::emit_db_ready(&app_handle, false);
                             eprintln!("Database failed: {}", e);
                         }
                     }
@@ -83,6 +83,7 @@ pub fn run() {
             sync_popular,
             get_popular_classes,
             get_popular_presets,
+            get_popular_regions,
             get_popular_stats,
             discard_preset,
             get_wanted,

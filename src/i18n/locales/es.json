@@ -1,0 +1,100 @@
+{
+  "app": {
+    "initializing": "Inicializando...",
+    "loading_config": "Cargando configuración...",
+    "opening_db": "Abriendo base de datos...",
+    "db_ready": "Base de datos lista",
+    "reloading": "Recargando...",
+    "error_db_failed": "No se pudo abrir la base de datos. Verificar registros."
+  },
+  "beauty": {
+    "tab_name": "Belleza",
+    "loading_classes": "Cargando clases...",
+    "total_presets": "TOTAL DE PRESETS",
+    "presets": "presets",
+    "downloading_presets": "Descargando Presets",
+    "downloading_images": "Descargando Imágenes"
+  },
+  "popular": {
+    "tab_name": "Popular",
+    "syncing_popular": "Sincronizando Popular",
+    "downloading_popular_images": "Descargando Imágenes Populares",
+    "starting": "Iniciando..."
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "save": "Guardar",
+    "settings": "Configuración",
+    "logs": "Registros",
+    "new_preset_found": "Nuevo preset encontrado",
+    "new_presets_found": "nuevos presets encontrados",
+    "preset_downloaded": "descargado"
+  },
+  "preset": {
+    "wish": "Añadir a la Lista de Deseos",
+    "wished": "En Lista de Deseos",
+    "discard": "Descartar",
+    "open_garmoth": "Abrir en Garmoth.com",
+    "export_to_bdo": "Exportar a Black Desert",
+    "no_binary_linked": "Sin estructura binaria vinculada"
+  },
+  "sort": {
+    "downloads": "Descargas",
+    "views": "Vistas",
+    "favorites": "Favoritos"
+  },
+  "sidebar": {
+    "search_placeholder": "Buscar clases, presets, creadores...",
+    "filter_sort": "Filtrar y Ordenar",
+    "popular_toggle": "Popular",
+    "all": "Todos",
+    "days_20": "20 días",
+    "days_30": "30 días",
+    "days_60": "60 días",
+    "days_90": "90 días",
+    "days_180": "180 días",
+    "days_365": "365 días",
+    "all_regions": "Todas las regiones",
+    "time_label": "Tiempo",
+    "region_label": "Región",
+    "sort_by_label": "Ordenar por",
+    "sort_downloads": "↓ Descargas",
+    "sort_views": "◉ Vistas",
+    "sort_favorites": "♥ Favoritos",
+    "loading": "Cargando...",
+    "error": "Error",
+    "no_classes": "Abre ⚙ para establecer el directorio del álbum",
+    "no_results": "Sin resultados",
+    "pin_to_top": "Fijar al inicio"
+  },
+  "confirm": {
+    "processing": "Procesando…",
+    "inject_title": "Inyectar Preset",
+    "inject_text": "Todos los archivos en el directorio de salida de BDO serán eliminados y reemplazados con este preset. Esto no se puede deshacer.",
+    "discard_title": "Descartar Preset",
+    "discard_text": "Este preset será ocultado de tu lista de populares."
+  },
+  "settings": {
+    "title": "Configuración",
+    "docs_directory": "Directorio de Documentos de Black Desert",
+    "docs_hint": "Selecciona la carpeta de documentos de Black Desert Online — todos los subdirectorios se crean automáticamente.",
+    "database": "Base de Datos",
+    "presets": "Presets",
+    "input": "Entrada",
+    "apply": "Aplicar",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "language": "Idioma",
+    "english": "English",
+    "spanish": "Español",
+    "portuguese": "Português",
+    "theme": "Tema",
+    "dark": "Oscuro",
+    "light": "Claro"
+  },
+  "lightbox": {
+    "close": "✕ Cerrar"
+  }
+}

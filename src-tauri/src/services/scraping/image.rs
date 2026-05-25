@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::playwright_service::BrowserSession;
-use crate::services::log::Logger;
+use crate::core::logger::Logger;
 
 /// Returns the first path matching `{dir}/{preset_id}/{img_name}` across all search dirs.
 pub fn find_image_in_dirs(search_dirs: &[&Path], preset_id: u64, img_name: &str) -> Option<PathBuf> {
