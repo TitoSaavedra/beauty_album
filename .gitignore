@@ -34,3 +34,8 @@ desktop.ini
 
 # Claude Code
 .claude/
+
+# Markdown
+*.md
+!README.md
+!CLAUDE.md

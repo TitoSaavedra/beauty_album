@@ -11,11 +11,11 @@ use crate::core::logger::Logger;
 use crate::core::events::{self, ScrapperProgress};
 use crate::features::scraping::{garmoth::GarmothClient, image, browser};
 
-const POPULAR_GET_SYNCED_IDS: &str   = include_str!("../../services/presets/sql/popular_get_synced_ids.sql");
-const POPULAR_GET_CLASS_DISPLAY: &str = include_str!("sql/popular_get_class_display.sql");
-const POPULAR_INSERT_PRESET: &str = include_str!("../../services/presets/sql/popular_insert_preset.sql");
-const POPULAR_UPDATE_IMAGE_OK: &str = include_str!("../../services/presets/sql/popular_update_image_ok.sql");
-const POPULAR_UPDATE_NO_IMAGE_OK: &str = include_str!("../../services/presets/sql/popular_update_no_image_ok.sql");
+const POPULAR_GET_SYNCED_IDS: &str    = include_str!("sql/popular_get_synced_ids.sql");
+const POPULAR_GET_CLASS_DISPLAY: &str  = include_str!("sql/popular_get_class_display.sql");
+const POPULAR_INSERT_PRESET: &str      = include_str!("sql/popular_insert_preset.sql");
+const POPULAR_UPDATE_IMAGE_OK: &str    = include_str!("sql/popular_update_image_ok.sql");
+const POPULAR_UPDATE_NO_IMAGE_OK: &str = include_str!("sql/popular_update_no_image_ok.sql");
 
 pub const DAYS_ALL: &[&str] = &["20", "30", "60", "90", "180", "365", "ever"];
 const REGIONS: &[&str] = &["eu", "na", "ru", "jp", "kr", "tw", "sa", "sea", "asia", "mena"];

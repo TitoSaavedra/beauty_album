@@ -7,15 +7,15 @@ use crate::features::beauty::service as album_service;
 use crate::features::popular::service;
 use crate::core::state::{AppState, DbPool, ScrapperCancelToken};
 
-const POPULAR_GET_WANTED: &str     = include_str!("../../services/presets/sql/popular_get_wanted.sql");
+const POPULAR_GET_WANTED: &str     = include_str!("sql/popular_get_wanted.sql");
 const POPULAR_GET_REGIONS: &str    = include_str!("sql/popular_get_regions.sql");
-const POPULAR_WANTED_CLEAR: &str   = include_str!("../../services/presets/sql/popular_wanted_clear.sql");
-const POPULAR_WANTED_SET: &str     = include_str!("../../services/presets/sql/popular_wanted_set.sql");
-const POPULAR_WANTED_GET: &str     = include_str!("../../services/presets/sql/popular_wanted_get.sql");
-const POPULAR_WANTED_TOGGLE: &str  = include_str!("../../services/presets/sql/popular_wanted_toggle.sql");
-const POPULAR_DISCARD: &str        = include_str!("../../services/presets/sql/popular_discard.sql");
-const CLASSES_GET_FAVORITES: &str  = include_str!("../../services/presets/sql/classes_get_favorites.sql");
-const CLASSES_SET_FAVORITE: &str   = include_str!("../../services/presets/sql/classes_set_favorite.sql");
+const POPULAR_WANTED_CLEAR: &str   = include_str!("sql/popular_wanted_clear.sql");
+const POPULAR_WANTED_SET: &str     = include_str!("sql/popular_wanted_set.sql");
+const POPULAR_WANTED_GET: &str     = include_str!("sql/popular_wanted_get.sql");
+const POPULAR_WANTED_TOGGLE: &str  = include_str!("sql/popular_wanted_toggle.sql");
+const POPULAR_DISCARD: &str        = include_str!("sql/popular_discard.sql");
+const CLASSES_GET_FAVORITES: &str  = include_str!("sql/classes_get_favorites.sql");
+const CLASSES_SET_FAVORITE: &str   = include_str!("sql/classes_set_favorite.sql");
 
 #[tauri::command]
 pub async fn sync_popular(

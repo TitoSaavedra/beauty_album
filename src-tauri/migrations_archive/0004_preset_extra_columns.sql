@@ -1,2 +1,0 @@
-ALTER TABLE presets ADD COLUMN class_id INTEGER;
-ALTER TABLE presets ADD COLUMN image_2  TEXT;
