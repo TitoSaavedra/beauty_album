@@ -1,33 +1,34 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
-  import * as api from '../features/beauty/tauri/album';
-  import type { ClassEntry, AppConfig } from '../features/beauty/tauri/album';
-  import ClassList from '../features/beauty/components/ClassList/ClassList.svelte';
-  import PresetGrid from '../features/beauty/components/PresetGrid/PresetGrid.svelte';
-  import PresetDetail from '../features/beauty/components/PresetDetail/PresetDetail.svelte';
-  import SettingsModal from '../shared/components/SettingsModal/SettingsModal.svelte';
+  import * as api from '../beauty/tauri/album';
+  import type { ClassEntry, AppConfig } from '../beauty/tauri/album';
+  import ClassList from '../beauty/components/ClassList/ClassList.svelte';
+  import PresetGrid from '../beauty/components/PresetGrid/PresetGrid.svelte';
+  import PresetDetail from '../beauty/components/PresetDetail/PresetDetail.svelte';
+  import SettingsModal from './SettingsModal/SettingsModal.svelte';
   import ConfirmDialog from '../shared/components/ConfirmDialog/ConfirmDialog.svelte';
   import ToastContainer from '../shared/components/ToastContainer/ToastContainer.svelte';
   import { appConfig } from '../shared/stores/appConfig';
   import { appLoading, appError, initStatus, settingsOpen } from '../shared/stores/appState';
-  import { wantedPresets } from '../features/beauty/stores/wantedPresets';
+  import { wantedPresets } from '../beauty/stores/wantedPresets';
   import {
     selectedClass, selectedClassObj, presets, loadingPresets, presetsError,
     hasMore, loadingMore, popularStats, popularRegions, filterSortBy,
     filterSinceTs, filterRegion, searchQuery, viewMode,
     selectClass, loadMore, setMode,
-  } from '../features/beauty/stores/presetGrid';
+  } from '../beauty/stores/presetGrid';
   import {
     scrapperRunning, scrapperTotal, scrapperCurrent, scrapperMsg, scrapperError, scrapperPhase,
     startScraper,
-  } from '../features/beauty/stores/scraper';
+  } from '../beauty/stores/scraper';
   import {
     popularRunning, popularTotal, popularCurrent, popularMsg, popularPhase,
     startPopularSync,
-  } from '../features/popular/stores/popularSync';
+  } from '../beauty/stores/popularSync';
   import { initRustEvents } from '../shared/events/rustEvents';
   import Button from '../shared/components/Button/Button.svelte';
+  import Splash from './Splash.svelte';
 
   let config: AppConfig = { bdo_docs_dir: '', cf_clearance: '' };
   let searchDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -140,25 +141,10 @@
   </nav>
 
   <div class="main-layout">
-    {#if $appLoading || $appError}
-        <div class="app-skeleton">
-        {#if $appError}
-          <div class="app-init-error">{$appError}</div>
-        {/if}
-        <!-- sidebar skeleton -->
-        <div class="skel-sidebar">
-          <div class="skel-search"></div>
-          {#each Array(9) as _, i}
-            <div class="skel-class-row" style="opacity: {1 - i * 0.08}"></div>
-          {/each}
-        </div>
-        <!-- grid skeleton -->
-        <div class="skel-grid">
-          {#each Array(12) as _, i}
-            <div class="skel-card" style="animation-delay: {i * 60}ms"></div>
-          {/each}
-        </div>
-      </div>
+    {#if $appLoading}
+      <Splash status={$initStatus} />
+    {:else if $appError}
+      <div class="app-init-error">{$appError}</div>
     {:else}
       <aside class="sidebar">
         <ClassList

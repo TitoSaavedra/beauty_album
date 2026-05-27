@@ -1,19 +1,16 @@
+mod app;
+mod beauty;
 mod core;
 mod db;
-mod features;
 
-use features::beauty::commands::{get_classes, get_presets, inject_preset, is_db_ready, open_file, open_logs, open_url};
-use features::config::commands::{get_config, save_config};
-use features::logs::commands::{get_log_stats, get_logs};
-use features::popular::commands::{
-    discard_preset, get_class_favorites, get_popular_classes, get_popular_preset_by_id,
-    get_popular_presets, get_popular_regions,
-    get_popular_stats, get_wanted, set_class_favorite, set_wanted, sync_popular, toggle_wanted,
+use app::commands::{get_config, save_config};
+use beauty::commands::{
+    check_pending, discard_preset, get_class_favorites, get_classes, get_popular_preset_by_id,
+    get_popular_presets, get_popular_regions, get_popular_stats, get_presets, get_wanted,
+    inject_preset, is_db_ready, open_file, open_url, run_scrapper, set_class_favorite,
+    set_wanted, stop_scrapper, sync_popular, toggle_wanted,
 };
-use features::scraping::commands::{check_pending, run_scrapper, stop_scrapper};
 use core::state::{AppState, DbConn, ScrapperCancelToken};
-use features::config::service as config_service;
-use features::scraping::service as scrapper_service;
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -21,8 +18,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            core::logger::init(app.handle());
-            let initial_config = config_service::load(app.handle());
+            let initial_config = app::service::load(app.handle());
             core::events::emit_config_loaded(app.handle(), &initial_config);
             app.manage(AppState(Mutex::new(initial_config)));
             app.manage(ScrapperCancelToken::default());
@@ -62,7 +58,7 @@ pub fn run() {
                             eprintln!("Database failed: {}", e);
                         }
                     }
-                    scrapper_service::watch_input_dir(app_handle, input_dir).await;
+                    beauty::scraping::service::watch_input_dir(app_handle, input_dir).await;
                 });
             }
 
@@ -78,12 +74,10 @@ pub fn run() {
             inject_preset,
             open_file,
             open_url,
-            open_logs,
             run_scrapper,
             stop_scrapper,
             check_pending,
             sync_popular,
-            get_popular_classes,
             get_popular_presets,
             get_popular_preset_by_id,
             get_popular_regions,
@@ -94,8 +88,6 @@ pub fn run() {
             toggle_wanted,
             get_class_favorites,
             set_class_favorite,
-            get_logs,
-            get_log_stats,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

@@ -6,45 +6,22 @@ use serde_json;
 pub struct ClassRepository;
 
 impl ClassRepository {
-    pub async fn get_for_presets(db: &impl ConnectionTrait) -> Result<Vec<serde_json::Value>, DbErr> {
+    pub async fn get_all_with_counts(db: &impl ConnectionTrait) -> Result<Vec<serde_json::Value>, DbErr> {
         let rows = db
             .query_all(Statement::from_string(
                 DbBackend::Sqlite,
                 "SELECT c.id_garmoth, c.display, c.icon_svg, c.is_favorite,
-                        COUNT(p.id) AS preset_count
+                        COUNT(CASE WHEN p.is_popular = 0 THEN 1 END) AS preset_count,
+                        COUNT(CASE WHEN p.is_popular = 1 AND p.is_discarded = 0 THEN 1 END) AS popular_count
                  FROM classes c
-                 LEFT JOIN presets p ON p.class_id = c.id_garmoth AND p.is_ok = 1 AND p.is_popular = 0
+                 LEFT JOIN presets p ON p.class_id = c.id_garmoth AND p.is_ok = 1
                  GROUP BY c.id_garmoth
                  ORDER BY preset_count DESC"
                     .to_string(),
             ))
             .await?;
 
-        Ok(Self::map_class_rows(&rows))
-    }
-
-    pub async fn get_for_popular(
-        db: &impl ConnectionTrait,
-        since_ts: i64,
-    ) -> Result<Vec<serde_json::Value>, DbErr> {
-        let rows = db
-            .query_all(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "SELECT c.id_garmoth, c.display, c.icon_svg, c.is_favorite,
-                        COUNT(p.id) AS preset_count
-                 FROM classes c
-                 LEFT JOIN presets p ON p.class_id = c.id_garmoth
-                   AND p.is_ok = 1
-                   AND p.is_popular = 1
-                   AND p.is_discarded = 0
-                   AND (? = 0 OR p.created_at >= ?)
-                 GROUP BY c.id_garmoth
-                 ORDER BY preset_count DESC",
-                [since_ts.into(), since_ts.into()],
-            ))
-            .await?;
-
-        Ok(Self::map_class_rows(&rows))
+        Ok(Self::map_class_rows_with_popular(&rows))
     }
 
     pub async fn get_display_map(
@@ -94,15 +71,16 @@ impl ClassRepository {
         Ok(())
     }
 
-    fn map_class_rows(rows: &[sea_orm::QueryResult]) -> Vec<serde_json::Value> {
+    fn map_class_rows_with_popular(rows: &[sea_orm::QueryResult]) -> Vec<serde_json::Value> {
         rows.iter()
             .map(|r| {
                 serde_json::json!({
-                    "class_id":     r.try_get::<i64>("", "id_garmoth").unwrap_or(0),
-                    "name":         r.try_get::<String>("", "display").unwrap_or_default(),
-                    "icon_svg":     r.try_get::<Option<String>>("", "icon_svg").unwrap_or(None),
-                    "preset_count": r.try_get::<i64>("", "preset_count").unwrap_or(0),
-                    "is_favorite":  r.try_get::<i32>("", "is_favorite").unwrap_or(0) == 1,
+                    "class_id":      r.try_get::<i64>("", "id_garmoth").unwrap_or(0),
+                    "name":          r.try_get::<String>("", "display").unwrap_or_default(),
+                    "icon_svg":      r.try_get::<Option<String>>("", "icon_svg").unwrap_or(None),
+                    "preset_count":  r.try_get::<i64>("", "preset_count").unwrap_or(0),
+                    "popular_count": r.try_get::<i64>("", "popular_count").unwrap_or(0),
+                    "is_favorite":   r.try_get::<i32>("", "is_favorite").unwrap_or(0) == 1,
                 })
             })
             .collect()

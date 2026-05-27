@@ -314,32 +314,6 @@ impl PresetRepository {
         .unwrap_or(false)
     }
 
-    pub async fn count_ok(db: &impl ConnectionTrait, class_id: u32) -> i64 {
-        db.query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "SELECT COUNT(*) AS n FROM presets WHERE class_id=? AND is_ok=1 AND is_popular=0",
-            [(class_id as i64).into()],
-        ))
-        .await
-        .ok()
-        .flatten()
-        .and_then(|r| r.try_get::<i64>("", "n").ok())
-        .unwrap_or(0)
-    }
-
-    pub async fn count_ok_popular(db: &impl ConnectionTrait, class_id: u32) -> i64 {
-        db.query_one(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "SELECT COUNT(*) AS n FROM presets WHERE class_id=? AND is_ok=1 AND is_popular=1 AND is_discarded=0",
-            [(class_id as i64).into()],
-        ))
-        .await
-        .ok()
-        .flatten()
-        .and_then(|r| r.try_get::<i64>("", "n").ok())
-        .unwrap_or(0)
-    }
-
     pub async fn reset_preset(
         db: &impl ConnectionTrait,
         id: u64,
