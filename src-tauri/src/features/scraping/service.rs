@@ -3,22 +3,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use sqlx::{Row, SqlitePool};
+use sea_orm::DatabaseConnection;
 use tauri::{AppHandle, Manager};
 
 use crate::core::errors::AppError;
 use crate::core::logger::Logger;
-use crate::core::state::{AppState, DbPool, ScrapperCancelToken};
+use crate::core::state::{AppState, DbConn, ScrapperCancelToken};
 use crate::core::events::{self, ScrapperProgress};
+use crate::db::repositories::preset_repo::PresetRepository;
 use crate::features::scraping::{garmoth::{GarmothClient, GarmothPreset}, browser, image};
-
-const UPDATE_PRESET_IS_OK: &str = include_str!("sql/scraper_update_is_ok.sql");
-const SELECT_OK_EXISTS: &str = include_str!("sql/scraper_ok_exists.sql");
-const SELECT_COUNT_OK: &str = include_str!("sql/scraper_count_ok.sql");
-const UPDATE_IMAGE_BOTH: &str = include_str!("sql/scraper_update_image_both.sql");
-const UPDATE_IMAGE_ONE: &str = include_str!("sql/scraper_update_image_one.sql");
-const RESET_PRESET: &str = include_str!("sql/scraper_reset_preset.sql");
-const INSERT_PRESET: &str = include_str!("sql/scraper_insert_preset.sql");
 
 struct PendingPreset {
     preset_id: u64,
@@ -70,20 +63,11 @@ fn scan_recursive(dir: &Path, result: &mut Vec<PendingPreset>) {
     }
 }
 
-async fn ok_exists_db(pool: &SqlitePool, preset_id: u64) -> bool {
-    sqlx::query(SELECT_OK_EXISTS)
-        .bind(preset_id as i64)
-        .fetch_one(pool)
-        .await
-        .map(|row| row.get::<i64, _>(0) == 1)
-        .unwrap_or(false)
-}
-
-pub async fn pending_count(pool: &SqlitePool, input_dir: &Path) -> usize {
+pub async fn pending_count(db: &DatabaseConnection, input_dir: &Path) -> usize {
     let pending = scan_input(input_dir);
     let mut count = 0;
     for p in &pending {
-        if !ok_exists_db(pool, p.preset_id).await {
+        if !PresetRepository::ok_exists(db, p.preset_id).await {
             count += 1;
         }
     }
@@ -93,7 +77,7 @@ pub async fn pending_count(pool: &SqlitePool, input_dir: &Path) -> usize {
 async fn process_image(
     meta: &FetchedMeta,
     browser: &browser::BrowserSession,
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     popular_dir: &Path,
     log: &Logger,
     app: &AppHandle,
@@ -101,17 +85,11 @@ async fn process_image(
     total: usize,
 ) -> (bool, bool) {
     let Some(img1) = &meta.image_1 else {
-        let _ = sqlx::query(UPDATE_PRESET_IS_OK)
-            .bind(chrono::Local::now().timestamp())
-            .bind(meta.preset.preset_id as i64)
-            .execute(pool)
-            .await;
-        let count: i64 = sqlx::query_scalar(SELECT_COUNT_OK)
-        .bind(meta.data.class as i64)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let _ = PresetRepository::set_is_ok(db, meta.preset.preset_id, chrono::Local::now().timestamp()).await;
+        let count = PresetRepository::count_ok(db, meta.data.class).await;
         events::emit_class_count_updated(app, meta.data.class, count, false);
+        let pop_count = PresetRepository::count_ok_popular(db, meta.data.class).await;
+        events::emit_class_count_updated(app, meta.data.class, pop_count, true);
         events::emit_progress(app, ScrapperProgress {
             preset_id: meta.preset.preset_id.to_string(),
             status: "done".to_string(),
@@ -148,17 +126,11 @@ async fn process_image(
     ).await;
 
     if !got {
-        let _ = sqlx::query(UPDATE_PRESET_IS_OK)
-            .bind(chrono::Local::now().timestamp())
-            .bind(meta.preset.preset_id as i64)
-            .execute(pool)
-            .await;
-        let count: i64 = sqlx::query_scalar(SELECT_COUNT_OK)
-        .bind(meta.data.class as i64)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let _ = PresetRepository::set_is_ok(db, meta.preset.preset_id, chrono::Local::now().timestamp()).await;
+        let count = PresetRepository::count_ok(db, meta.data.class).await;
         events::emit_class_count_updated(app, meta.data.class, count, false);
+        let pop_count = PresetRepository::count_ok_popular(db, meta.data.class).await;
+        events::emit_class_count_updated(app, meta.data.class, pop_count, true);
         events::emit_progress(app, ScrapperProgress {
             preset_id: meta.preset.preset_id.to_string(),
             status: "done".to_string(),
@@ -179,30 +151,21 @@ async fn process_image(
 
     let now = chrono::Local::now().timestamp();
     if img2_saved {
-        let _ = sqlx::query(UPDATE_IMAGE_BOTH)
-            .bind(img1.as_str())
-            .bind(meta.image_2.as_deref().unwrap())
-            .bind(now)
-            .bind(meta.preset.preset_id as i64)
-            .execute(pool)
-            .await;
+        let _ = PresetRepository::update_image_both(
+            db,
+            meta.preset.preset_id,
+            img1,
+            meta.image_2.as_deref().unwrap(),
+            now,
+        ).await;
     } else {
-        let _ = sqlx::query(UPDATE_IMAGE_ONE)
-            .bind(img1.as_str())
-            .bind(now)
-            .bind(meta.preset.preset_id as i64)
-            .execute(pool)
-            .await;
+        let _ = PresetRepository::update_image_one(db, meta.preset.preset_id, img1, now).await;
     }
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM presets WHERE class_id=? AND is_ok=1 AND is_popular=0"
-    )
-    .bind(meta.data.class as i64)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let count = PresetRepository::count_ok(db, meta.data.class).await;
     events::emit_class_count_updated(app, meta.data.class, count, false);
+    let pop_count = PresetRepository::count_ok_popular(db, meta.data.class).await;
+    events::emit_class_count_updated(app, meta.data.class, pop_count, true);
 
     log.tag(&meta.preset.class_hint, &format!("Done preset {}", meta.preset.preset_id)).await;
     events::emit_progress(app, ScrapperProgress {
@@ -221,18 +184,18 @@ async fn process_image(
 
 pub async fn run(
     app: &AppHandle,
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     input_dir: &Path,
     presets_dir: &Path,
     popular_dir: &Path,
     cancel: Arc<AtomicBool>,
 ) -> Result<String, AppError> {
-    let log = Logger::new(pool, "scrapper_service");
+    let log = Logger::new(db, "scrapper_service");
 
     let mut pending_all = scan_input(input_dir);
     let mut pending = Vec::new();
     for p in pending_all.drain(..) {
-        if !ok_exists_db(pool, p.preset_id).await {
+        if !PresetRepository::ok_exists(db, p.preset_id).await {
             pending.push(p);
         }
     }
@@ -240,7 +203,6 @@ pub async fn run(
     let total = pending.len();
     log.tag("SYNC", &format!("Starting: {} preset(s) pending", total)).await;
     if total == 0 {
-        events::emit_scrapper_done(app, "no_pending");
         return Ok("No presets pending".to_string());
     }
 
@@ -269,14 +231,14 @@ pub async fn run(
         let client = Arc::clone(&client);
         let tx = tx.clone();
         let app_h = app.clone();
-        let pool = pool.clone();
+        let db = db.clone();
         let p_dir = presets_dir.to_path_buf();
         let cancel = Arc::clone(&cancel);
         let fetch_errors = Arc::clone(&fetch_errors);
         let n_meta = Arc::clone(&n_meta);
 
         tokio::spawn(async move {
-            let log = Logger::new(&pool, "scrapper_service");
+            let log = Logger::new(&db, "scrapper_service");
 
             if cancel.load(Ordering::Relaxed) {
                 events::emit_progress(&app_h, ScrapperProgress {
@@ -300,12 +262,7 @@ pub async fn run(
             let _ = tokio::fs::copy(&preset.pab_path, preset_dir.join(&pab_filename)).await;
 
             let now_pre = chrono::Local::now().timestamp();
-            let _ = sqlx::query(RESET_PRESET)
-            .bind(&pab_filename)
-            .bind(now_pre)
-            .bind(preset.preset_id as i64)
-            .execute(&pool)
-            .await;
+            let _ = PresetRepository::reset_preset(&db, preset.preset_id, &pab_filename, now_pre).await;
 
             events::emit_progress(&app_h, ScrapperProgress {
                 preset_id: preset.preset_id.to_string(),
@@ -322,6 +279,7 @@ pub async fn run(
                 Err(e) => {
                     fetch_errors.fetch_add(1, Ordering::Relaxed);
                     log.tag(&preset.class_hint, &format!("ERR meta {}: {}", preset.preset_id, e)).await;
+                    let _ = PresetRepository::set_is_ok(&db, preset.preset_id, chrono::Local::now().timestamp()).await;
                     return;
                 }
             };
@@ -335,22 +293,22 @@ pub async fn run(
             let raw_json = serde_json::to_string(&raw).unwrap_or_default();
             let now = chrono::Local::now().timestamp();
 
-            let _ = sqlx::query(INSERT_PRESET)
-            .bind(data.id as i64)
-            .bind(data.class as i64)
-            .bind(&data.title)
-            .bind(&data.user_nickname)
-            .bind(&data.character_name)
-            .bind(data.downloads as i64)
-            .bind(data.views as i64)
-            .bind(data.likes as i64)
-            .bind(&image_2)
-            .bind(&pab_filename)
-            .bind(data.created_at)
-            .bind(now)
-            .bind(&raw_json)
-            .execute(&pool)
-            .await;
+            let _ = PresetRepository::insert_preset(
+                &db,
+                data.id as i64,
+                data.class as i64,
+                data.title.as_deref(),
+                data.user_nickname.as_deref(),
+                data.character_name.as_deref(),
+                data.downloads as i64,
+                data.views as i64,
+                data.likes as i64,
+                image_2.as_deref(),
+                &pab_filename,
+                Some(data.created_at),
+                now,
+                &raw_json,
+            ).await;
 
             let current = n_meta.fetch_add(1, Ordering::Relaxed) + 1;
             log.tag(&preset.class_hint, &format!("Meta ready: {}", preset.preset_id)).await;
@@ -391,12 +349,10 @@ pub async fn run(
             break;
         }
 
-        let (done, http_dl) = process_image(&meta, &browser, pool, popular_dir, &log, app, img_current, total).await;
+        let (done, http_dl) = process_image(&meta, &browser, db, popular_dir, &log, app, img_current, total).await;
         if done { n_done += 1; } else { n_err += 1; }
         if http_dl { image::jitter_sleep().await; }
     }
-
-    events::emit_refresh_album(app);
 
     let msg = format!("Finished — {} done  {} error(s)", n_done, n_err);
     log.tag("SYNC", &msg).await;
@@ -406,14 +362,14 @@ pub async fn run(
 pub async fn watch_input_dir(app: AppHandle, input_dir: PathBuf) {
     use std::time::Duration;
 
-    let pool = loop {
-        if let Some(p) = app.state::<DbPool>().0.get() {
-            break p.clone();
+    let db = loop {
+        if let Some(d) = app.state::<DbConn>().0.get() {
+            break d.clone();
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
 
-    let log = Logger::new(&pool, "scrapper_service");
+    let log = Logger::new(&db, "scrapper_service");
     let mut known: HashSet<u64> = scan_input(&input_dir).into_iter().map(|p| p.preset_id).collect();
     log.tag("WATCH", &format!("Watching {} ({} known)", input_dir.display(), known.len())).await;
 
@@ -428,7 +384,6 @@ pub async fn watch_input_dir(app: AppHandle, input_dir: PathBuf) {
         if !new_files.is_empty() {
             log.tag("WATCH", &format!("New: {} preset(s)", new_files.len())).await;
 
-            // Cancel any running operation so to_download gets priority
             let cancel = app.state::<ScrapperCancelToken>().0.clone();
             cancel.store(true, Ordering::Relaxed);
             tokio::time::sleep(Duration::from_millis(300)).await;

@@ -3,8 +3,6 @@ import { invoke } from '@tauri-apps/api/core';
 export interface AppConfig {
     bdo_docs_dir: string;
     cf_clearance: string;
-    locale?: string;
-    theme?: string;
 }
 
 export const getConfig = (): Promise<AppConfig> =>

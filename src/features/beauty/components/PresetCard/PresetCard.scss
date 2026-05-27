@@ -1,6 +1,6 @@
 .preset-card {
-  background: #0f141a;
-  border: 1px solid #1a232c;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -11,22 +11,32 @@
 }
 
 .preset-card:hover {
-  border-color: #ffcc4d;
-  box-shadow: 0 0 20px rgba(255, 204, 77, 0.1);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 20px rgba(var(--color-accent-rgb), 0.1);
 }
 
 .preset-card.downloaded {
-  border-color: #22c55e;
+  border-color: var(--color-status-success-light);
 }
 
 .preset-card.downloaded:hover {
-  border-color: #4ade80;
+  border-color: var(--color-status-success-lighter);
   box-shadow: 0 0 20px rgba(34, 197, 94, 0.1);
+}
+
+.preset-card.wished {
+  border-color: var(--color-accent-quaternary);
+  box-shadow: 0 0 16px rgba(var(--color-accent-quaternary-rgb), 0.25);
+}
+
+.preset-card.wished:hover {
+  border-color: var(--color-accent-quaternary);
+  box-shadow: 0 0 24px rgba(var(--color-accent-quaternary-rgb), 0.35);
 }
 
 .thumb-wrap {
   aspect-ratio: 4 / 5;
-  background: #070a0e;
+  background: var(--color-bg-base);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -48,20 +58,20 @@
 .skeleton-thumb {
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, #0f141a 25%, #1a232c 50%, #0f141a 75%);
+  background: linear-gradient(90deg, var(--color-bg-surface) 25%, var(--color-border) 50%, var(--color-bg-surface) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
+  0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
 
 .no-media {
   font-size: 10px;
   letter-spacing: 0.15em;
-  color: #64748b;
+  color: var(--color-text-secondary);
   text-transform: uppercase;
 }
 
@@ -83,7 +93,7 @@
 .card-title {
   font-size: 13px;
   font-weight: 700;
-  color: #fff;
+  color: var(--color-text-primary);
   letter-spacing: 0.03em;
   white-space: nowrap;
   overflow: hidden;
@@ -92,20 +102,20 @@
 
 .card-creator {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Action strip — shown on hover */
 .card-actions {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   display: flex;
+  justify-content: flex-end;
   gap: 1px;
   opacity: 0;
   transform: translateY(4px);
@@ -120,7 +130,7 @@
 }
 
 .action-want {
-  flex: 1;
+  flex: 0 0 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -129,23 +139,27 @@
   border-radius: 5px 0 0 5px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(8, 12, 18, 0.92);
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: background 0.18s, color 0.18s, border-color 0.18s;
+  transition: all 0.18s;
 }
 
-.action-want:hover,
+.action-want:hover {
+  background: rgba(var(--color-accent-rgb), 0.14);
+  color: var(--color-accent);
+  border-color: rgba(var(--color-accent-rgb), 0.35);
+}
+
 .action-want.want-active {
-  background: rgba(255, 204, 77, 0.14);
-  color: #ffcc4d;
-  border-color: rgba(255, 204, 77, 0.35);
+  background: transparent;
+  color: var(--color-accent-quaternary);
+  border-color: var(--color-accent-quaternary);
 }
 
 .action-icon { font-size: 12px; line-height: 1; }
-.action-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .action-discard {
   width: 28px;
@@ -154,35 +168,35 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-left: none;
   background: rgba(8, 12, 18, 0.92);
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 11px;
   cursor: pointer;
   transition: background 0.18s, color 0.18s, border-color 0.18s;
 }
 
 .action-discard:hover {
-  background: rgba(220, 60, 60, 0.18);
-  color: #f87171;
-  border-color: rgba(220, 60, 60, 0.3);
+  background: rgba(var(--color-error-rgb), 0.18);
+  color: var(--color-text-error);
+  border-color: rgba(var(--color-error-rgb), 0.3);
 }
 
 .card-footer {
   padding: 8px 12px;
-  background: #0c1015;
+  background: var(--color-bg-footer);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid #141b23;
+  border-top: 1px solid var(--color-border-subtle);
   gap: 4px;
 }
 
 .stat {
   font-size: 10px;
   font-family: monospace;
-  color: #475569;
+  color: var(--color-btn-text);
   letter-spacing: 0.04em;
 }
 
-.stat-fav { color: #64405a; }
-.preset-card:hover .stat { color: #64748b; }
-.preset-card:hover .stat-fav { color: #7c4f6d; }
+.stat-fav { color: var(--color-favorite-stat); }
+.preset-card:hover .stat { color: var(--color-text-secondary); }
+.preset-card:hover .stat-fav { color: var(--color-favorite-stat-hover); }

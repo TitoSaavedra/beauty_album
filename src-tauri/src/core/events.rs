@@ -1,6 +1,8 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::core::state::AppConfig;
+
 #[derive(Serialize, Clone)]
 pub struct ScrapperProgress {
     pub preset_id: String,
@@ -24,14 +26,6 @@ pub fn emit_popular_progress(app: &AppHandle, progress: ScrapperProgress) {
     let _ = app.emit("popular_progress", progress);
 }
 
-pub fn emit_scrapper_done(app: &AppHandle, msg: &str) {
-    let _ = app.emit("scrapper_done", msg);
-}
-
-pub fn emit_refresh_album(app: &AppHandle) {
-    let _ = app.emit("refresh_album", ());
-}
-
 pub fn emit_db_ready(app: &AppHandle, ok: bool) {
     let _ = app.emit("db_ready", ok);
 }
@@ -45,5 +39,19 @@ pub fn emit_class_count_updated(app: &AppHandle, class_id: u32, count: i64, is_p
         "class_id": class_id,
         "count": count,
         "is_popular": is_popular
+    }));
+}
+
+pub fn emit_config_loaded(app: &AppHandle, config: &AppConfig) {
+    let _ = app.emit("config_loaded", config);
+}
+
+pub fn emit_log_entry(app: &AppHandle, id: i64, ts: i64, tag: &str, source: &str, msg: &str) {
+    let _ = app.emit("log_entry", serde_json::json!({
+        "id":     id,
+        "ts":     ts,
+        "tag":    tag,
+        "source": source,
+        "msg":    msg,
     }));
 }

@@ -1,11 +1,10 @@
 import { writable, get } from 'svelte/store';
-import { listen } from '@tauri-apps/api/event';
 import * as api from '../tauri/album';
 import { toast } from '../../../shared/stores/toast';
 import { presetDetail } from './presetDetail';
 import { scheduleGridRefresh, viewMode, selectedClassObj } from './presetGrid';
 
-interface ScrapperProgress {
+export interface ScrapperProgress {
   preset_id: string;
   status: string;
   message: string;
@@ -17,10 +16,39 @@ interface ScrapperProgress {
 
 export const scrapperRunning = writable(false);
 export const scrapperCurrent = writable(0);
-export const scrapperTotal = writable(0);
-export const scrapperMsg = writable('');
-export const scrapperError = writable('');
-export const scrapperPhase = writable<'presets' | 'images' | ''>('');
+export const scrapperTotal   = writable(0);
+export const scrapperMsg     = writable('');
+export const scrapperError   = writable('');
+export const scrapperPhase   = writable<'presets' | 'images' | ''>('');
+
+export function handleScrapperProgress(payload: ScrapperProgress) {
+  if (payload.total > 0) scrapperTotal.set(payload.total);
+  if (payload.current > 0) scrapperCurrent.set(payload.current);
+  if (payload.message) scrapperMsg.set(payload.message);
+
+  if (payload.status === 'metadata') {
+    scrapperPhase.set('presets');
+    const scObj = get(selectedClassObj);
+    if (payload.class_id && payload.class_id === scObj?.class_id)
+      scheduleGridRefresh(payload.class_id);
+  } else if (payload.status === 'done') {
+    scrapperPhase.set('images');
+    const scObj = get(selectedClassObj);
+    if (payload.class_id && payload.class_id === scObj?.class_id)
+      scheduleGridRefresh(payload.class_id);
+    const pid = payload.preset_id;
+    const cls = payload.class_name;
+    toast.show(`${cls} #${pid} downloaded`, 'success', 5000, async () => {
+      const list = await api.getPresets(cls);
+      const found = list.find(p => p.preset_id === pid);
+      if (found) presetDetail.set(found);
+    });
+  } else if (payload.status === 'error') {
+    scrapperError.set(payload.message);
+  } else if (payload.status === 'cancelled') {
+    scrapperMsg.set('Cancelled');
+  }
+}
 
 export async function startScraper() {
   if (get(scrapperRunning)) return;
@@ -30,37 +58,6 @@ export async function startScraper() {
   scrapperMsg.set('Starting...');
   scrapperError.set('');
   scrapperPhase.set('');
-
-  const unlisten = await listen<ScrapperProgress>('scrapper_progress', ({ payload }) => {
-    if (payload.total > 0) scrapperTotal.set(payload.total);
-    if (payload.current > 0) scrapperCurrent.set(payload.current);
-    if (payload.message) scrapperMsg.set(payload.message);
-
-    if (payload.status === 'metadata') {
-      scrapperPhase.set('presets');
-      const vm = get(viewMode);
-      const scObj = get(selectedClassObj);
-      if (vm === 'presets' && payload.class_id && payload.class_id === scObj?.class_id)
-        scheduleGridRefresh(payload.class_id);
-    } else if (payload.status === 'done') {
-      scrapperPhase.set('images');
-      const vm = get(viewMode);
-      const scObj = get(selectedClassObj);
-      if (vm === 'presets' && payload.class_id && payload.class_id === scObj?.class_id)
-        scheduleGridRefresh(payload.class_id);
-      const pid = payload.preset_id;
-      const cls = payload.class_name;
-      toast.show(`${cls} #${pid} downloaded`, 'success', 5000, async () => {
-        const list = await api.getPresets(cls);
-        const found = list.find(p => p.preset_id === pid);
-        if (found) presetDetail.set(found);
-      });
-    } else if (payload.status === 'error') {
-      scrapperError.set(payload.message);
-    } else if (payload.status === 'cancelled') {
-      scrapperMsg.set('Cancelled');
-    }
-  });
 
   let alreadyRunning = false;
   try {
@@ -75,7 +72,6 @@ export async function startScraper() {
       scrapperError.set(msg);
     }
   } finally {
-    unlisten();
     if (!alreadyRunning) {
       scrapperRunning.set(false);
       scrapperMsg.set('');

@@ -1,12 +1,13 @@
 use std::path::Path;
 
+use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use tauri::AppHandle;
 
 use crate::core::errors::AppError;
 use crate::core::events;
 
-pub async fn open(db_path: &Path, app: &AppHandle) -> Result<SqlitePool, AppError> {
+pub async fn open(db_path: &Path, app: &AppHandle) -> Result<DatabaseConnection, AppError> {
     events::emit_init_progress(app, "Opening database...");
 
     if db_path.exists() {
@@ -30,5 +31,5 @@ pub async fn open(db_path: &Path, app: &AppHandle) -> Result<SqlitePool, AppErro
     sqlx::migrate!("./migrations").run(&pool).await?;
 
     events::emit_init_progress(app, "Database ready");
-    Ok(pool)
+    Ok(SqlxSqliteConnector::from_sqlx_sqlite_pool(pool))
 }

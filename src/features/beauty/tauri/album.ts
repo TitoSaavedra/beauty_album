@@ -87,6 +87,9 @@ export const getPopularPresets = (
 ): Promise<{ presets: PresetEntry[]; wanted: PresetEntry[] }> =>
     invoke('get_popular_presets', { className, offset, limit, sortBy, search, sinceTs, region });
 
+export const getPopularPresetById = (presetId: string): Promise<PresetEntry> =>
+    invoke('get_popular_preset_by_id', { presetId });
+
 export interface PopularStats {
     total: number;
     d20: number; d30: number; d60: number;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { lightbox } from '../../stores/lightbox';
+  import Button from '../Button/Button.svelte';
 
   function onKeydown(e: KeyboardEvent) {
     if (!$lightbox) return;
@@ -20,10 +21,10 @@
     aria-modal="true"
     on:click|self={lightbox.close}
   >
-    <button class="btn-gold close-btn" on:click={lightbox.close}>✕ Close</button>
+    <Button variant="ghost" class="close-btn" on:click={lightbox.close}>✕ Close</Button>
 
     {#if $lightbox.images.length > 1}
-      <button class="btn-gold nav prev" on:click={lightbox.prev}>‹</button>
+      <Button variant="ghost" class="nav prev" on:click={lightbox.prev}>‹</Button>
     {/if}
 
     <img
@@ -33,8 +34,12 @@
     />
 
     {#if $lightbox.images.length > 1}
-      <button class="btn-gold nav next" on:click={lightbox.next}>›</button>
+      <Button variant="ghost" class="nav next" on:click={lightbox.next}>›</Button>
       <span class="counter">{$lightbox.index + 1} / {$lightbox.images.length}</span>
     {/if}
   </div>
 {/if}
+
+<style lang="scss">
+  @use './Lightbox.scss';
+</style>

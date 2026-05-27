@@ -80,41 +80,6 @@
   </div>
 {/if}
 
-<style>
-  .state-msg {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 40vh;
-  }
-
-  .state-hint {
-    font-size: 12px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: #64748b;
-  }
-
-  .state-hint.error { color: #f87171; }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 24px;
-    align-content: start;
-  }
-
-  .skel-card {
-    aspect-ratio: 4 / 5;
-    border-radius: 8px;
-    border: 1px solid #1a232c;
-    background: linear-gradient(90deg, #0d1219 25%, #141c25 50%, #0d1219 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.6s ease-in-out infinite;
-  }
-
-  @keyframes shimmer {
-    0%   { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
+<style lang="scss">
+  @use './PresetGrid.scss';
 </style>

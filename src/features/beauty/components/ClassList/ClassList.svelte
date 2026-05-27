@@ -3,9 +3,13 @@
   import { fly, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
   import { _ } from 'svelte-i18n';
-  import { listen } from '@tauri-apps/api/event';
   import type { ClassEntry, PopularStats } from '../../tauri/album';
+  import Button from '../../../../shared/components/Button/Button.svelte';
+  import Input from '../../../../shared/components/Input/Input.svelte';
+  import Select from '../../../../shared/components/Select/Select.svelte';
+  import Toggle from '../../../../shared/components/Toggle/Toggle.svelte';
   import { getClasses, getPopularClasses, getClassFavorites, setClassFavorite } from '../../tauri/album';
+  import { classes } from '../../stores/classes';
 
   export let selectedClass: string | null = null;
   export let filterSortBy: 'downloads' | 'views' | 'favorites' = 'downloads';
@@ -20,22 +24,11 @@
     modeChange: 'presets' | 'popular';
   }>();
 
-  let classes: ClassEntry[] = [];
   let loading = false;
   let error = '';
   let favorites: Set<string> = new Set();
 
   onMount(async () => {
-    const unlisten = await listen<{ class_id: number; count: number; is_popular: boolean }>('class_count_updated', ({ payload }) => {
-      classes = classes.map(c =>
-        c.class_id === payload.class_id
-          ? payload.is_popular
-            ? { ...c, popular_count: payload.count }
-            : { ...c, preset_count: payload.count }
-          : c
-      );
-    });
-
     try {
       const favs = await getClassFavorites();
       favorites = new Set(favs);
@@ -45,12 +38,10 @@
     try {
       const [albumClasses, popularClasses] = await Promise.all([getClasses(), getPopularClasses()]);
       const popularMap = new Map(popularClasses.map(c => [c.class_id, c.preset_count]));
-      classes = albumClasses.map(c => ({ ...c, popular_count: popularMap.get(c.class_id) ?? 0 }));
-      if (classes[0]) dispatch('select', classes[0]);
+      classes.set(albumClasses.map(c => ({ ...c, popular_count: popularMap.get(c.class_id) ?? 0 })));
+      if ($classes[0]) dispatch('select', $classes[0]);
     } catch (e) { error = String(e); }
     finally { loading = false; }
-
-    return unlisten;
   });
 
   async function toggleFavorite(name: string, e: MouseEvent) {
@@ -74,8 +65,8 @@
   $: localViewMode = viewMode;
 
   $: filtered = search.trim()
-    ? classes.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
-    : classes;
+    ? $classes.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
+    : $classes;
 
   $: sorted = [...filtered].sort((a, b) => {
     const aFav = favorites.has(a.name);
@@ -124,17 +115,14 @@
 
 <div class="search-box">
   <div class="search-row">
-    <input
-      class="search-input"
-      type="text"
+    <Input
       bind:value={search}
       on:input={onSearchInput}
       placeholder="Search classes, presets, creators..."
     />
-    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-    <button
-      class="filter-btn"
-      class:filter-active={filterActive}
+    <Button
+      variant="icon"
+      active={filterActive}
       title="Filter & Sort"
       on:click={() => filterOpen = !filterOpen}
     >
@@ -142,14 +130,14 @@
         <line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         <line x1="2" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        <circle cx="5.5" cy="4" r="1.75" fill="#0f141a" stroke="currentColor" stroke-width="1.3"/>
-        <circle cx="10.5" cy="8" r="1.75" fill="#0f141a" stroke="currentColor" stroke-width="1.3"/>
-        <circle cx="6" cy="12" r="1.75" fill="#0f141a" stroke="currentColor" stroke-width="1.3"/>
+        <circle cx="5.5" cy="4" r="1.75" fill="var(--color-bg-surface)" stroke="currentColor" stroke-width="1.3"/>
+        <circle cx="10.5" cy="8" r="1.75" fill="var(--color-bg-surface)" stroke="currentColor" stroke-width="1.3"/>
+        <circle cx="6" cy="12" r="1.75" fill="var(--color-bg-surface)" stroke="currentColor" stroke-width="1.3"/>
       </svg>
       {#if filterActive}
         <span class="filter-dot"></span>
       {/if}
-    </button>
+    </Button>
   </div>
 
   {#if filterOpen}
@@ -157,42 +145,50 @@
       <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
       <div class="fp-row" on:click={toggleViewMode}>
         <span class="fp-field-label">{$_('sidebar.popular_toggle')}</span>
-        <div class="toggle-switch" class:toggle-on={localViewMode === 'popular'}>
-          <div class="toggle-knob"></div>
-        </div>
+        <Toggle checked={localViewMode === 'popular'} />
       </div>
 
       {#if localViewMode === 'popular'}
         <div class="fp-field">
           <span class="fp-field-label">{$_('sidebar.time_label')}</span>
-          <select class="fp-select" bind:value={localDays} on:change={emitFilter}>
-            <option value={0}>{$_('sidebar.all')}</option>
-            <option value={20}>{$_('sidebar.days_20')}</option>
-            <option value={30}>{$_('sidebar.days_30')}</option>
-            <option value={60}>{$_('sidebar.days_60')}</option>
-            <option value={90}>{$_('sidebar.days_90')}</option>
-            <option value={180}>{$_('sidebar.days_180')}</option>
-            <option value={365}>{$_('sidebar.days_365')}</option>
-          </select>
+          <Select
+            bind:value={localDays}
+            on:change={emitFilter}
+            options={[
+              { value: 0,   label: $_('sidebar.all') },
+              { value: 20,  label: $_('sidebar.days_20') },
+              { value: 30,  label: $_('sidebar.days_30') },
+              { value: 60,  label: $_('sidebar.days_60') },
+              { value: 90,  label: $_('sidebar.days_90') },
+              { value: 180, label: $_('sidebar.days_180') },
+              { value: 365, label: $_('sidebar.days_365') },
+            ]}
+          />
         </div>
         <div class="fp-field">
           <span class="fp-field-label">{$_('sidebar.region_label')}</span>
-          <select class="fp-select" bind:value={localRegion} on:change={emitFilter}>
-            <option value="">{$_('sidebar.all_regions')}</option>
-            {#each regions as r}
-              <option value={r}>{r.toUpperCase()}</option>
-            {/each}
-          </select>
+          <Select
+            bind:value={localRegion}
+            on:change={emitFilter}
+            options={[
+              { value: '', label: $_('sidebar.all_regions') },
+              ...regions.map(r => ({ value: r, label: r.toUpperCase() }))
+            ]}
+          />
         </div>
       {/if}
 
       <div class="fp-field">
         <span class="fp-field-label">{$_('sidebar.sort_by_label')}</span>
-        <select class="fp-select" bind:value={localSortBy} on:change={setSortBy}>
-          <option value="downloads">{$_('sidebar.sort_downloads')}</option>
-          <option value="views">{$_('sidebar.sort_views')}</option>
-          <option value="favorites">{$_('sidebar.sort_favorites')}</option>
-        </select>
+        <Select
+          bind:value={localSortBy}
+          on:change={setSortBy}
+          options={[
+            { value: 'downloads', label: $_('sidebar.sort_downloads') },
+            { value: 'views',     label: $_('sidebar.sort_views') },
+            { value: 'favorites', label: $_('sidebar.sort_favorites') },
+          ]}
+        />
       </div>
     </div>
   {/if}
@@ -203,7 +199,7 @@
     <p class="status">Loading...</p>
   {:else if error}
     <p class="status error">{error}</p>
-  {:else if classes.length === 0}
+  {:else if $classes.length === 0}
     <p class="status">Open ⚙ to set album directory</p>
   {:else if sorted.length === 0}
     <p class="status">No results</p>

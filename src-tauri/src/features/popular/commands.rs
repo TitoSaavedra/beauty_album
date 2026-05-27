@@ -1,35 +1,25 @@
 use std::sync::atomic::Ordering;
 
-use sqlx::Row;
 use tauri::{AppHandle, State};
 
 use crate::features::beauty::service as album_service;
 use crate::features::popular::service;
-use crate::core::state::{AppState, DbPool, ScrapperCancelToken};
-
-const POPULAR_GET_WANTED: &str     = include_str!("sql/popular_get_wanted.sql");
-const POPULAR_GET_REGIONS: &str    = include_str!("sql/popular_get_regions.sql");
-const POPULAR_WANTED_CLEAR: &str   = include_str!("sql/popular_wanted_clear.sql");
-const POPULAR_WANTED_SET: &str     = include_str!("sql/popular_wanted_set.sql");
-const POPULAR_WANTED_GET: &str     = include_str!("sql/popular_wanted_get.sql");
-const POPULAR_WANTED_TOGGLE: &str  = include_str!("sql/popular_wanted_toggle.sql");
-const POPULAR_DISCARD: &str        = include_str!("sql/popular_discard.sql");
-const CLASSES_GET_FAVORITES: &str  = include_str!("sql/classes_get_favorites.sql");
-const CLASSES_SET_FAVORITE: &str   = include_str!("sql/classes_set_favorite.sql");
+use crate::core::state::{AppState, DbConn, ScrapperCancelToken};
+use crate::db::repositories::preset_repo::PresetRepository;
 
 #[tauri::command]
 pub async fn sync_popular(
     app: AppHandle,
     state: State<'_, AppState>,
-    db: State<'_, DbPool>,
+    db: State<'_, DbConn>,
     cancel: State<'_, ScrapperCancelToken>,
 ) -> Result<String, String> {
     cancel.0.store(false, Ordering::Relaxed);
 
-    let pool = db.0.get().ok_or("Database not initialized")?;
+    let conn = db.0.get().ok_or("Database not initialized")?;
     let popular_dir = state.0.lock().map_err(|e| e.to_string())?.popular_dir();
 
-    service::sync_popular(&app, pool, &popular_dir, cancel.0.clone())
+    service::sync_popular(&app, conn, &popular_dir, cancel.0.clone())
         .await
         .map_err(|e| e.to_string())
 }
@@ -37,10 +27,10 @@ pub async fn sync_popular(
 #[tauri::command]
 pub async fn get_popular_classes(
     #[allow(non_snake_case)] sinceTs: Option<i64>,
-    db: State<'_, DbPool>,
+    db: State<'_, DbConn>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    album_service::get_classes_for_popular(pool, sinceTs.unwrap_or(0))
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    album_service::get_classes_for_popular(conn, sinceTs.unwrap_or(0))
         .await
         .map_err(|e| e.to_string())
 }
@@ -55,16 +45,16 @@ pub async fn get_popular_presets(
     limit: Option<i64>,
     region: Option<String>,
     state: State<'_, AppState>,
-    db: State<'_, DbPool>,
+    db: State<'_, DbConn>,
 ) -> Result<serde_json::Value, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
+    let conn = db.0.get().ok_or("Database not initialized")?;
     let (popular_dir, presets_dir) = {
         let config = state.0.lock().map_err(|e| e.to_string())?;
         (config.popular_dir(), config.presets_dir())
     };
 
     let presets = album_service::get_popular_presets(
-        pool,
+        conn,
         &popular_dir,
         &presets_dir,
         &class_name,
@@ -80,7 +70,7 @@ pub async fn get_popular_presets(
     .map_err(|e| e.to_string())?;
 
     let wanted = album_service::get_popular_presets(
-        pool,
+        conn,
         &popular_dir,
         &presets_dir,
         &class_name,
@@ -107,108 +97,88 @@ pub async fn get_popular_presets(
 #[tauri::command]
 pub async fn get_popular_stats(
     class_name: String,
-    db: State<'_, DbPool>,
+    db: State<'_, DbConn>,
 ) -> Result<serde_json::Value, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    album_service::get_popular_stats(pool, &class_name)
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    album_service::get_popular_stats(conn, &class_name)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_popular_regions(db: State<'_, DbPool>) -> Result<Vec<String>, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    let rows = sqlx::query(POPULAR_GET_REGIONS)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
+pub async fn get_popular_regions(db: State<'_, DbConn>) -> Result<Vec<String>, String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    PresetRepository::get_regions(conn).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_wanted(db: State<'_, DbPool>) -> Result<Vec<String>, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    let rows = sqlx::query(POPULAR_GET_WANTED)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(rows.iter().map(|r| r.get::<i64, _>(0).to_string()).collect())
+pub async fn get_wanted(db: State<'_, DbConn>) -> Result<Vec<String>, String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    let ids = PresetRepository::wanted_get_ids(conn).await.map_err(|e| e.to_string())?;
+    Ok(ids.iter().map(|id| id.to_string()).collect())
 }
 
 #[tauri::command]
-pub async fn set_wanted(ids: Vec<String>, db: State<'_, DbPool>) -> Result<(), String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    sqlx::query(POPULAR_WANTED_CLEAR)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    for id_str in &ids {
-        if let Ok(id) = id_str.parse::<i64>() {
-            sqlx::query(POPULAR_WANTED_SET)
-                .bind(id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-    }
-    tx.commit().await.map_err(|e| e.to_string())
+pub async fn set_wanted(ids: Vec<String>, db: State<'_, DbConn>) -> Result<(), String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    let parsed: Vec<i64> = ids.iter()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    PresetRepository::wanted_set_bulk(conn, &parsed).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn toggle_wanted(preset_id: String, db: State<'_, DbPool>) -> Result<bool, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
+pub async fn toggle_wanted(preset_id: String, db: State<'_, DbConn>) -> Result<bool, String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
     let id: i64 = preset_id.parse().map_err(|_| "Invalid preset id")?;
-    let row = sqlx::query(POPULAR_WANTED_GET)
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    let current: i64 = row.map(|r| r.get(0)).unwrap_or(0);
+    let current = PresetRepository::wanted_get(conn, id).await.map_err(|e| e.to_string())?;
     let new_val = if current == 0 { 1i64 } else { 0i64 };
-    sqlx::query(POPULAR_WANTED_TOGGLE)
-        .bind(new_val)
-        .bind(id)
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    PresetRepository::wanted_toggle(conn, id, new_val).await.map_err(|e| e.to_string())?;
     Ok(new_val == 1)
 }
 
 #[tauri::command]
-pub async fn discard_preset(preset_id: String, db: State<'_, DbPool>) -> Result<(), String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
+pub async fn discard_preset(preset_id: String, db: State<'_, DbConn>) -> Result<(), String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
     let id: i64 = preset_id.parse().map_err(|_| "Invalid preset id")?;
-    sqlx::query(POPULAR_DISCARD)
-        .bind(id)
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    PresetRepository::discard(conn, id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_class_favorites(db: State<'_, DbPool>) -> Result<Vec<String>, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    let rows = sqlx::query(CLASSES_GET_FAVORITES)
-        .fetch_all(pool)
+pub async fn get_class_favorites(db: State<'_, DbConn>) -> Result<Vec<String>, String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    crate::db::repositories::class_repo::ClassRepository::get_favorites(conn)
         .await
-        .map_err(|e| e.to_string())?;
-    Ok(rows.iter().map(|r| r.get::<String, _>(0)).collect())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn set_class_favorite(
     class_name: String,
     is_favorite: bool,
-    db: State<'_, DbPool>,
+    db: State<'_, DbConn>,
 ) -> Result<(), String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    sqlx::query(CLASSES_SET_FAVORITE)
-        .bind(is_favorite as i64)
-        .bind(&class_name)
-        .execute(pool)
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    crate::db::repositories::class_repo::ClassRepository::set_favorite(conn, &class_name, is_favorite)
         .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_popular_preset_by_id(
+    preset_id: String,
+    state: State<'_, AppState>,
+    db: State<'_, DbConn>,
+) -> Result<serde_json::Value, String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    let id: i64 = preset_id.parse().map_err(|_| "Invalid preset id")?;
+    let (popular_dir, presets_dir) = {
+        let config = state.0.lock().map_err(|e| e.to_string())?;
+        (config.popular_dir(), config.presets_dir())
+    };
+
+    PresetRepository::get_preset_by_id(conn, &popular_dir, &presets_dir, id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Preset not found".to_string())
 }

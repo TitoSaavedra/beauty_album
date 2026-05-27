@@ -6,7 +6,7 @@ register('pt-BR', () => import('./locales/pt-BR.json'));
 
 let savedLocale: string | null = null;
 if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-  savedLocale = localStorage.getItem('app-locale');
+  savedLocale = localStorage.getItem('preferred-locale');
 }
 
 const initialLocale = savedLocale || getLocaleFromNavigator() || 'en';

@@ -44,3 +44,9 @@ impl From<sqlx::migrate::MigrateError> for AppError {
         AppError::Database(e.to_string())
     }
 }
+
+impl From<sea_orm::DbErr> for AppError {
+    fn from(e: sea_orm::DbErr) -> Self {
+        AppError::Database(e.to_string())
+    }
+}

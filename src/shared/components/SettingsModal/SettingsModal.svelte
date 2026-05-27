@@ -6,6 +6,9 @@
   import { saveConfig } from '../../tauri/config';
   import type { AppConfig } from '../../tauri/config';
   import { theme } from '../../../stores/theme';
+  import Button from '../Button/Button.svelte';
+  import Input from '../Input/Input.svelte';
+  import PillSelector from '../PillSelector/PillSelector.svelte';
 
   export let config: AppConfig;
 
@@ -26,9 +29,7 @@
   function changeLocale(newLocale: string) {
     selectedLocale = newLocale;
     locale.set(newLocale);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('preferred-locale', newLocale);
-    }
+    localStorage.setItem('preferred-locale', newLocale);
   }
 
   function changeTheme(newTheme: string) {
@@ -43,8 +44,6 @@
       const updated: AppConfig = {
         bdo_docs_dir: bdo_docs_dir.trim(),
         cf_clearance: config.cf_clearance ?? '',
-        locale: selectedLocale,
-        theme: selectedTheme
       };
       await saveConfig(updated);
       dispatch('save', updated);
@@ -82,46 +81,39 @@
     <div class="modal-content">
       <div class="settings-row">
         <span class="row-label">{$_('settings.language')}</span>
-        <div class="pill-group">
-          <button class="pill" class:pill-active={selectedLocale === 'en'} on:click={() => changeLocale('en')}>
-            <span>🇬🇧</span>{$_('settings.english')}
-          </button>
-          <button class="pill" class:pill-active={selectedLocale === 'es'} on:click={() => changeLocale('es')}>
-            <span>🇪🇸</span>{$_('settings.spanish')}
-          </button>
-          <button class="pill" class:pill-active={selectedLocale === 'pt-BR'} on:click={() => changeLocale('pt-BR')}>
-            <span>🇧🇷</span>{$_('settings.portuguese')}
-          </button>
-        </div>
+        <PillSelector
+          bind:value={selectedLocale}
+          on:change={e => changeLocale(String(e.detail))}
+          options={[
+            { value: 'en',    label: $_('settings.english'),    icon: '🇬🇧' },
+            { value: 'es',    label: $_('settings.spanish'),    icon: '🇪🇸' },
+            { value: 'pt-BR', label: $_('settings.portuguese'), icon: '🇧🇷' },
+          ]}
+        />
       </div>
 
       <div class="settings-row">
         <span class="row-label">{$_('settings.theme')}</span>
-        <div class="pill-group">
-          <button class="pill" class:pill-active={selectedTheme === 'dark'} on:click={() => changeTheme('dark')}>
-            <span>🌙</span>{$_('settings.dark')}
-          </button>
-          <button class="pill" class:pill-active={selectedTheme === 'light'} on:click={() => changeTheme('light')}>
-            <span>☀️</span>{$_('settings.light')}
-          </button>
-        </div>
+        <PillSelector
+          bind:value={selectedTheme}
+          on:change={e => changeTheme(e.detail)}
+          options={[
+            { value: 'dark',  label: $_('settings.dark'),  icon: '🌙' },
+            { value: 'light', label: $_('settings.light'), icon: '☀️' },
+          ]}
+        />
       </div>
 
       <div class="settings-row settings-row--dir">
         <span class="row-label">{$_('settings.docs_directory')}</span>
         <div class="input-row">
-          <div class="input-wrapper">
-            <svg class="input-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
-            </svg>
-            <input
-              id="bdo-docs"
-              class="field-input"
-              type="text"
-              bind:value={bdo_docs_dir}
-              placeholder="C:\Users\You\Documents\Black Desert"
-            />
-          </div>
+          <Input bind:value={bdo_docs_dir} placeholder="C:\Users\You\Documents\Black Desert">
+            <svelte:fragment slot="icon">
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+              </svg>
+            </svelte:fragment>
+          </Input>
           <button class="btn-browse" on:click={pickFolder} title="Browse">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
@@ -137,10 +129,10 @@
     </div>
 
     <div class="modal-actions">
-      <button class="btn-cancel" on:click={close}>{$_('common.cancel')}</button>
-      <button class="btn-gold" on:click={save} disabled={saving}>
+      <Button variant="ghost" on:click={close}>{$_('common.cancel')}</Button>
+      <Button variant="primary" on:click={save} disabled={saving}>
         {saving ? $_('settings.saving') : $_('settings.save')}
-      </button>
+      </Button>
     </div>
   </div>
 </div>

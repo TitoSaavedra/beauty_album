@@ -2,17 +2,17 @@ use tauri::State;
 
 use crate::core::logger::Logger;
 use crate::features::beauty::service;
-use crate::core::state::{AppState, DbPool};
+use crate::core::state::{AppState, DbConn};
 
 #[tauri::command]
-pub fn is_db_ready(db: State<'_, DbPool>) -> bool {
+pub fn is_db_ready(db: State<'_, DbConn>) -> bool {
     db.0.get().is_some()
 }
 
 #[tauri::command]
-pub async fn get_classes(db: State<'_, DbPool>) -> Result<Vec<serde_json::Value>, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
-    service::get_classes_for_presets(pool)
+pub async fn get_classes(db: State<'_, DbConn>) -> Result<Vec<serde_json::Value>, String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    service::get_classes_for_presets(conn)
         .await
         .map_err(|e| e.to_string())
 }
@@ -25,12 +25,12 @@ pub async fn get_presets(
     offset: Option<i64>,
     limit: Option<i64>,
     state: State<'_, AppState>,
-    db: State<'_, DbPool>,
+    db: State<'_, DbConn>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let pool = db.0.get().ok_or("Database not initialized")?;
+    let conn = db.0.get().ok_or("Database not initialized")?;
     let presets_dir = state.0.lock().map_err(|e| e.to_string())?.presets_dir();
     service::get_presets(
-        pool,
+        conn,
         &presets_dir,
         &class_name,
         sortBy.as_deref().unwrap_or("downloads"),
@@ -43,7 +43,7 @@ pub async fn get_presets(
 }
 
 #[tauri::command]
-pub fn inject_preset(download_path: String, state: State<AppState>, db: State<DbPool>) -> Result<(), String> {
+pub fn inject_preset(download_path: String, state: State<AppState>, db: State<DbConn>) -> Result<(), String> {
     use std::fs;
     use std::path::Path;
 
@@ -76,11 +76,11 @@ pub fn inject_preset(download_path: String, state: State<AppState>, db: State<Db
 
     fs::copy(src, out.join(file_name)).map_err(|e| e.to_string())?;
 
-    if let Some(pool) = db.0.get() {
-        let pool = pool.clone();
+    if let Some(conn) = db.0.get() {
+        let conn = conn.clone();
         let fname = file_name.to_string();
         tauri::async_runtime::spawn(async move {
-            Logger::new(&pool, "album").tag("USER", &format!("Injected preset: {}", fname)).await;
+            Logger::new(&conn, "album").tag("USER", &format!("Injected preset: {}", fname)).await;
         });
     }
 
@@ -128,11 +128,11 @@ pub fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn open_logs(db: State<DbPool>) -> Result<(), String> {
-    if let Some(pool) = db.0.get() {
-        let pool = pool.clone();
+pub fn open_logs(db: State<DbConn>) -> Result<(), String> {
+    if let Some(conn) = db.0.get() {
+        let conn = conn.clone();
         tauri::async_runtime::spawn(async move {
-            Logger::new(&pool, "album").tag("USER", "Opened log viewer").await;
+            Logger::new(&conn, "album").tag("USER", "Opened log viewer").await;
         });
     }
     Ok(())

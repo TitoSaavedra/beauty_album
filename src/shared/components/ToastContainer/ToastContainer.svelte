@@ -13,3 +13,7 @@
     </div>
   {/each}
 </div>
+
+<style lang="scss">
+  @use './ToastContainer.scss';
+</style>

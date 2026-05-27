@@ -1,5 +1,5 @@
+use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -9,18 +9,6 @@ pub struct AppConfig {
     pub bdo_docs_dir: String,
     #[serde(default)]
     pub cf_clearance: String,
-    #[serde(default = "default_locale")]
-    pub locale: String,
-    #[serde(default = "default_theme")]
-    pub theme: String,
-}
-
-fn default_locale() -> String {
-    "en".to_string()
-}
-
-fn default_theme() -> String {
-    "dark".to_string()
 }
 
 impl AppConfig {
@@ -60,9 +48,9 @@ impl AppConfig {
 
 pub struct AppState(pub Mutex<AppConfig>);
 
-pub struct DbPool(pub OnceLock<SqlitePool>);
+pub struct DbConn(pub OnceLock<DatabaseConnection>);
 
-impl Default for DbPool {
+impl Default for DbConn {
     fn default() -> Self {
         Self(OnceLock::new())
     }

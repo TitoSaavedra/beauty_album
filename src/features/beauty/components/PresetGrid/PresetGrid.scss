@@ -9,20 +9,10 @@
   font-size: 12px;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 
-.state-hint.loading {
-  color: rgba(255, 204, 77, 0.4);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.state-hint.error { color: #f87171; }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
+.state-hint.error { color: var(--color-text-error); }
 
 .grid {
   display: grid;
@@ -34,8 +24,8 @@
 .skel-card {
   aspect-ratio: 4 / 5;
   border-radius: 8px;
-  border: 1px solid #1a232c;
-  background: linear-gradient(90deg, #0d1219 25%, #141c25 50%, #0d1219 75%);
+  border: 1px solid var(--color-border);
+  background: linear-gradient(90deg, var(--color-bg-skeleton) 25%, var(--color-bg-elevated) 50%, var(--color-bg-skeleton) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.6s ease-in-out infinite;
 }

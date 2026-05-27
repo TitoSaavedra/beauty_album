@@ -2,7 +2,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::core::db;
 use crate::core::events;
-use crate::core::state::{AppConfig, AppState, DbPool};
+use crate::core::state::{AppConfig, AppState, DbConn};
 use crate::features::config::service as config_service;
 use crate::features::scraping::service as scrapper_service;
 
@@ -17,12 +17,12 @@ pub async fn save_config(
     config: AppConfig,
     app: AppHandle,
     state: State<'_, AppState>,
-    db: State<'_, DbPool>,
+    db: State<'_, DbConn>,
 ) -> Result<(), String> {
     config_service::save(&app, &config).map_err(|e| e.to_string())?;
     *state.0.lock().map_err(|e| e.to_string())? = config.clone();
+    events::emit_config_loaded(&app, &config);
 
-    // First-time setup: bdo_docs_dir was just configured and DB isn't open yet.
     if !config.bdo_docs_dir.is_empty() && db.0.get().is_none() {
         let (db_path, input_dir) = (config.db_path(), config.to_download_dir());
         for dir in &[
@@ -36,9 +36,9 @@ pub async fn save_config(
         let app_handle = app;
         tauri::async_runtime::spawn(async move {
             match db::open(&db_path, &app_handle).await {
-                Ok(pool) => {
-                    let db_state = app_handle.state::<DbPool>();
-                    let _ = db_state.0.set(pool);
+                Ok(conn) => {
+                    let db_state = app_handle.state::<DbConn>();
+                    let _ = db_state.0.set(conn);
                     events::emit_db_ready(&app_handle, true);
                 }
                 Err(e) => {

@@ -2,6 +2,7 @@
   import { fade, scale } from 'svelte/transition';
   import { _ } from 'svelte-i18n';
   import { confirmDialog } from '../../stores/confirmDialog';
+  import Button from '../Button/Button.svelte';
 
   $: opts = $confirmDialog;
 
@@ -55,11 +56,15 @@
       {/if}
 
       <div class="swal-actions">
-        <button class="swal-cancel" on:click={cancel} disabled={running}>{$_('common.cancel')}</button>
-        <button class="swal-confirm" on:click={confirm} disabled={running}>
+        <Button variant="ghost" class="swal-cancel" on:click={cancel} disabled={running}>{$_('common.cancel')}</Button>
+        <Button variant="primary" class="swal-confirm" on:click={confirm} disabled={running}>
           {running ? $_('confirm.processing') : (opts.confirmLabel ?? $_('common.confirm'))}
-        </button>
+        </Button>
       </div>
     </div>
   </div>
 {/if}
+
+<style lang="scss">
+  @use './ConfirmDialog.scss';
+</style>
