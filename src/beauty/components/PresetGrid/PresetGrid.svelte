@@ -1,0 +1,85 @@
+<script lang="ts">
+  import { fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import type { PresetEntry } from '../../tauri/album';
+  import { discardPreset } from '../../tauri/album';
+  import { wantedPresets } from '../../stores/wantedPresets';
+  import PresetCard from '../PresetCard/PresetCard.svelte';
+
+  export let presets: PresetEntry[] = [];
+  export let selectedClass: string | null = null;
+  export let loading = false;
+  export let error = '';
+  export let isPopular = false;
+  export let hasMore = false;
+  export let loadingMore = false;
+  export let extraLoading = false;
+
+  let discarded = new Set<string>();
+
+  $: localPresets = (() => {
+    let list = [...presets];
+
+    if (isPopular) {
+      list = list.filter(p => !discarded.has(p.preset_id ?? ''));
+    }
+
+    list.sort((a, b) => {
+      const aWanted = $wantedPresets.has(a.preset_id ?? '');
+      const bWanted = $wantedPresets.has(b.preset_id ?? '');
+      if (aWanted !== bWanted) return bWanted ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  })();
+
+  $: if (presets) discarded = new Set<string>();
+
+  async function handleDiscard(e: CustomEvent<string>) {
+    const id = e.detail;
+    discarded = new Set([...discarded, id]);
+    try {
+      await discardPreset(id);
+    } catch {
+      // non-fatal
+    }
+  }
+</script>
+
+{#if !selectedClass}
+  <div class="state-msg">
+    <div class="state-hint">Select a class to browse presets</div>
+  </div>
+{:else if loading}
+  <div class="grid">
+    {#each Array.from({length: 12}) as _, i}
+      <div class="skel-card" style="animation-delay: {i * 50}ms"></div>
+    {/each}
+  </div>
+{:else if error}
+  <div class="state-msg">
+    <div class="state-hint error">{error}</div>
+  </div>
+{:else if localPresets.length === 0}
+  <div class="state-msg">
+    <div class="state-hint">No presets found in this class</div>
+  </div>
+{:else}
+  <div class="grid">
+    {#each localPresets as preset, i (preset.preset_id ?? i)}
+      <div in:fly={{ y: 20, duration: 220, easing: cubicOut }}>
+        <PresetCard {preset} {selectedClass} on:discard={handleDiscard} />
+      </div>
+    {/each}
+    {#if loadingMore || (extraLoading && hasMore)}
+      {#each Array.from({length: 6}) as _, i}
+        <div class="skel-card" style="animation-delay: {i * 60}ms"></div>
+      {/each}
+    {/if}
+  </div>
+{/if}
+
+<style lang="scss">
+  @use './PresetGrid.scss';
+</style>

@@ -1,1 +1,0 @@
-SELECT tag, COUNT(*) AS n FROM logs GROUP BY tag ORDER BY n DESC

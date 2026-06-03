@@ -1,68 +1,82 @@
-mod commands;
-mod errors;
-pub mod services;
-pub mod state;
+mod app;
+mod beauty;
+mod core;
+mod db;
 
-use commands::album::{get_classes, get_presets, inject_preset, is_db_ready, open_file, open_logs, open_url};
-use commands::config::{get_config, save_config};
-use commands::logs::{get_log_stats, get_logs};
-use commands::popular::{
-    discard_preset, get_class_favorites, get_popular_classes, get_popular_presets, get_popular_stats,
-    get_wanted, set_class_favorite, set_wanted, sync_popular, toggle_wanted,
+use app::commands::{get_config, save_config};
+use beauty::commands::{
+    discard_preset, get_classes, get_preset_by_id,
+    get_popular_presets, get_popular_regions, get_popular_stats, get_presets, get_wanted,
+    inject_preset, is_db_ready, open_file, open_url,
+    set_wanted, toggle_wanted, get_class_favorites, set_class_favorite,
 };
-use commands::scrapper::{check_pending, run_scrapper, stop_scrapper};
-use services::{config::config_service, db, scraping::scrapper_service};
-use state::{AppState, DbPool, ScrapperCancelToken};
-use std::sync::Mutex;
+use core::state::{AppState, DbConn};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            services::log::init(app.handle());
-            let initial_config = config_service::load(app.handle());
-            app.manage(AppState(Mutex::new(initial_config)));
-            app.manage(ScrapperCancelToken::default());
-            app.manage(DbPool::default());
+            let initial_config = app::service::load(app.handle());
+            app.manage(AppState(Mutex::new(initial_config.clone())));
+            app.manage(DbConn::default());
 
-            let configured = {
-                let state = app.state::<AppState>();
-                let config = state.0.lock().unwrap();
-                !config.bdo_docs_dir.is_empty()
-            };
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let configured = !initial_config.bdo_docs_dir.is_empty();
 
-            if configured {
-                let (db_path, input_dir) = {
-                    let state = app.state::<AppState>();
-                    let config = state.0.lock().unwrap();
-                    for dir in &[
-                        config.db_dir(),
-                        config.presets_dir(),
-                        config.to_download_dir(),
-                        config.customization_dir(),
-                    ] {
-                        let _ = std::fs::create_dir_all(dir);
-                    }
-                    (config.db_path(), config.to_download_dir())
-                };
+                if configured {
+                    let (db_path, input_dir, presets_dir, popular_dir) = {
+                        for dir in &[
+                            initial_config.db_dir(),
+                            initial_config.presets_dir(),
+                            initial_config.to_download_dir(),
+                            initial_config.customization_dir(),
+                        ] {
+                            let _ = std::fs::create_dir_all(dir);
+                        }
+                        (
+                            initial_config.db_path(),
+                            initial_config.to_download_dir(),
+                            initial_config.presets_dir(),
+                            initial_config.popular_dir(),
+                        )
+                    };
 
-                let app_handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    match db::open(&db_path, &app_handle).await {
-                        Ok(pool) => {
-                            let db_state = app_handle.state::<DbPool>();
-                            let _ = db_state.0.set(pool);
-                            services::events::emit_db_ready(&app_handle, true);
+                    let db_ok = match core::db::open(&db_path, &app_handle).await {
+                        Ok(conn) => {
+                            let db_state = app_handle.state::<DbConn>();
+                            let _ = db_state.0.set(conn);
+                            true
                         }
                         Err(e) => {
-                            services::events::emit_db_ready(&app_handle, false);
                             eprintln!("Database failed: {}", e);
+                            false
+                        }
+                    };
+
+                    if db_ok {
+                        let app_h = app_handle.clone();
+                        let db_state = app_handle.state::<DbConn>();
+                        if let Some(db_h) = db_state.0.get() {
+                            let cancel = Arc::new(AtomicBool::new(false));
+                            let _ = beauty::scrapping::service::orchestrate_scraping(
+                                &app_h,
+                                &db_h,
+                                &input_dir,
+                                &presets_dir,
+                                &popular_dir,
+                                cancel,
+                                false,
+                            ).await;
                         }
                     }
-                    scrapper_service::watch_input_dir(app_handle, input_dir).await;
-                });
-            }
+                } else {
+                    eprintln!("Not configured — skipping initialization");
+                }
+            });
 
             Ok(())
         })
@@ -76,13 +90,9 @@ pub fn run() {
             inject_preset,
             open_file,
             open_url,
-            open_logs,
-            run_scrapper,
-            stop_scrapper,
-            check_pending,
-            sync_popular,
-            get_popular_classes,
             get_popular_presets,
+            get_preset_by_id,
+            get_popular_regions,
             get_popular_stats,
             discard_preset,
             get_wanted,
@@ -90,8 +100,6 @@ pub fn run() {
             toggle_wanted,
             get_class_favorites,
             set_class_favorite,
-            get_logs,
-            get_log_stats,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

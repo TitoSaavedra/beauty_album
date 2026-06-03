@@ -34,3 +34,12 @@ desktop.ini
 
 # Claude Code
 .claude/
+
+# Logs
+startup.log
+*.log
+
+# Markdown
+*.md
+!README.md
+!CLAUDE.md
