@@ -18,8 +18,8 @@
   $: title    = preset?.title    ?? preset?.name     ?? preset?.preset_id ?? 'Untitled';
   $: creator  = preset?.creator  ?? 'Anonymous';
   $: date = preset?.date
-      ?? ((preset as any)?.created_at
-          ? new Date(((preset as any).created_at as number) * 1000).toLocaleDateString('en-CA')
+      ?? ((preset as any)?.creation_at
+          ? new Date(((preset as any).creation_at as number) * 1000).toLocaleDateString('en-CA')
           : null);
   $: id       = preset?.preset_id ?? '—';
   $: downloads = preset?.downloads ?? 0;

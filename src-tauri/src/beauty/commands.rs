@@ -1,11 +1,8 @@
-use std::sync::atomic::Ordering;
-use tauri::{AppHandle, State};
+use tauri::State;
 
 use crate::beauty::service;
-use crate::beauty::sync;
-use crate::beauty::scraping::service as scraping_service;
 use crate::core::logger::Logger;
-use crate::core::state::{AppState, DbConn, ScrapperCancelToken};
+use crate::core::state::{AppState, DbConn};
 use crate::db::repositories::class_repo::ClassRepository;
 use crate::db::repositories::preset_repo::PresetRepository;
 
@@ -31,10 +28,14 @@ pub async fn get_presets(
     db: State<'_, DbConn>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let conn = db.0.get().ok_or("Database not initialized")?;
-    let presets_dir = state.0.lock().map_err(|e| e.to_string())?.presets_dir();
+    let (presets_dir, popular_dir) = {
+        let config = state.0.lock().map_err(|e| e.to_string())?;
+        (config.presets_dir(), config.popular_dir())
+    };
     service::get_presets(
         conn,
         &presets_dir,
+        &popular_dir,
         &class_name,
         sortBy.as_deref().unwrap_or("downloads"),
         search.as_deref().unwrap_or(""),
@@ -128,21 +129,6 @@ pub fn open_url(url: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
-}
-
-#[tauri::command]
-pub async fn sync_popular(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    db: State<'_, DbConn>,
-    cancel: State<'_, ScrapperCancelToken>,
-) -> Result<String, String> {
-    cancel.0.store(false, Ordering::Relaxed);
-    let conn = db.0.get().ok_or("Database not initialized")?;
-    let popular_dir = state.0.lock().map_err(|e| e.to_string())?.popular_dir();
-    sync::sync_popular(&app, conn, &popular_dir, cancel.0.clone())
-        .await
-        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -255,27 +241,7 @@ pub async fn discard_preset(preset_id: String, db: State<'_, DbConn>) -> Result<
 }
 
 #[tauri::command]
-pub async fn get_class_favorites(db: State<'_, DbConn>) -> Result<Vec<String>, String> {
-    let conn = db.0.get().ok_or("Database not initialized")?;
-    ClassRepository::get_favorites(conn)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn set_class_favorite(
-    class_name: String,
-    is_favorite: bool,
-    db: State<'_, DbConn>,
-) -> Result<(), String> {
-    let conn = db.0.get().ok_or("Database not initialized")?;
-    ClassRepository::set_favorite(conn, &class_name, is_favorite)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_popular_preset_by_id(
+pub async fn get_preset_by_id(
     preset_id: String,
     state: State<'_, AppState>,
     db: State<'_, DbConn>,
@@ -293,44 +259,20 @@ pub async fn get_popular_preset_by_id(
 }
 
 #[tauri::command]
-pub async fn run_scrapper(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    db: State<'_, DbConn>,
-    cancel: State<'_, ScrapperCancelToken>,
-) -> Result<String, String> {
-    cancel.0.store(false, Ordering::Relaxed);
+pub async fn get_class_favorites(db: State<'_, DbConn>) -> Result<Vec<String>, String> {
     let conn = db.0.get().ok_or("Database not initialized")?;
-    let (input_dir, presets_dir, popular_dir) = {
-        let config = state.0.lock().map_err(|e| e.to_string())?;
-        (config.to_download_dir(), config.presets_dir(), config.popular_dir())
-    };
-    Logger::new(conn, "scrapper").tag("USER", "Sync requested").await;
-    scraping_service::run(&app, conn, &input_dir, &presets_dir, &popular_dir, cancel.0.clone())
+    ClassRepository::get_favorites(conn).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_class_favorite(
+    class_name: String,
+    is_favorite: bool,
+    db: State<'_, DbConn>,
+) -> Result<(), String> {
+    let conn = db.0.get().ok_or("Database not initialized")?;
+    ClassRepository::set_favorite(conn, &class_name, is_favorite)
         .await
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn stop_scrapper(
-    cancel: State<'_, ScrapperCancelToken>,
-    db: State<'_, DbConn>,
-) -> Result<(), String> {
-    cancel.0.store(true, Ordering::Relaxed);
-    if let Some(conn) = db.0.get() {
-        Logger::new(conn, "scrapper").tag("USER", "Stop sync requested").await;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn check_pending(
-    state: State<'_, AppState>,
-    db: State<'_, DbConn>,
-) -> Result<usize, String> {
-    let conn = db.0.get().ok_or("Database not initialized")?;
-    let input_dir = state.0.lock().map_err(|e| e.to_string())?.to_download_dir();
-    let count = scraping_service::pending_count(conn, &input_dir).await;
-    Logger::new(conn, "scrapper").tag("INFO", &format!("Pending check: {} preset(s) need sync", count)).await;
-    Ok(count)
-}

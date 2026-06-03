@@ -16,7 +16,8 @@
         "title": "BDO Beauty Album",
         "width": 1280,
         "height": 800,
-        "resizable": true
+        "resizable": true,
+        "visible": true
       }
     ],
     "security": {

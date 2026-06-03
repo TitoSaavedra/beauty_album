@@ -14,7 +14,7 @@ impl ClassRepository {
                         COUNT(CASE WHEN p.is_popular = 0 THEN 1 END) AS preset_count,
                         COUNT(CASE WHEN p.is_popular = 1 AND p.is_discarded = 0 THEN 1 END) AS popular_count
                  FROM classes c
-                 LEFT JOIN presets p ON p.class_id = c.id_garmoth AND p.is_ok = 1
+                 LEFT JOIN presets p ON p.class_id = c.id_garmoth
                  GROUP BY c.id_garmoth
                  ORDER BY preset_count DESC"
                     .to_string(),
@@ -51,6 +51,7 @@ impl ClassRepository {
                 "SELECT display FROM classes WHERE is_favorite = 1".to_string(),
             ))
             .await?;
+
         Ok(rows
             .iter()
             .filter_map(|r| r.try_get::<String>("", "display").ok())
@@ -62,10 +63,13 @@ impl ClassRepository {
         class_name: &str,
         is_favorite: bool,
     ) -> Result<(), DbErr> {
-        db.execute(Statement::from_sql_and_values(
+        let value = if is_favorite { 1 } else { 0 };
+        db.execute(Statement::from_string(
             DbBackend::Sqlite,
-            "UPDATE classes SET is_favorite = ? WHERE display = ?",
-            [((is_favorite as i64)).into(), class_name.into()],
+            format!(
+                "UPDATE classes SET is_favorite = {} WHERE display = '{}'",
+                value, class_name
+            ),
         ))
         .await?;
         Ok(())

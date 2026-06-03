@@ -1,5 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 
+// ─────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────
+
 export interface ClassEntry {
     class_id: number;
     name: string;
@@ -33,8 +37,75 @@ export interface AppConfig {
     cf_clearance: string;
 }
 
+export interface PopularStats {
+    total: number;
+    d20: number; d30: number; d60: number;
+    d90: number; d180: number; d365: number;
+}
+
+export enum ProgressStatus {
+    Processing = 'processing',
+    Metadata = 'metadata',
+    Done = 'done',
+    Cancelled = 'cancelled',
+}
+
+export enum ProgressType {
+    Preset = 'preset',
+    Popular = 'popular',
+}
+
+export interface ScrapperProgress {
+    preset_id: string;
+    status: ProgressStatus;
+    message: string;
+    class_name: string;
+    class_id: number;
+    current: number;
+    total: number;
+    progress_type: ProgressType;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Database State
+// ─────────────────────────────────────────────────────────────────
+
+export const isDbReady = (): Promise<boolean> =>
+    invoke('is_db_ready');
+
+// ─────────────────────────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────────────────────────
+
+export const getConfig = (): Promise<AppConfig> =>
+    invoke('get_config');
+
+export const saveConfig = (config: AppConfig): Promise<void> =>
+    invoke('save_config', { config });
+
+// ─────────────────────────────────────────────────────────────────
+// Classes
+// ─────────────────────────────────────────────────────────────────
+
 export const getClasses = (): Promise<ClassEntry[]> =>
     invoke('get_classes');
+
+export const getPopularStats = (className: string): Promise<PopularStats> =>
+    invoke('get_popular_stats', { className });
+
+export const getPopularRegions = (): Promise<string[]> =>
+    invoke('get_popular_regions');
+
+export const getClassFavorites = (): Promise<string[]> =>
+    invoke('get_class_favorites');
+
+export const setClassFavorite = (className: string, isFavorite: boolean): Promise<void> =>
+    invoke('set_class_favorite', { className, isFavorite });
+
+
+// ─────────────────────────────────────────────────────────────────
+// Presets (Read)
+// ─────────────────────────────────────────────────────────────────
 
 export const getPresets = (
     className: string,
@@ -44,33 +115,6 @@ export const getPresets = (
     search = '',
 ): Promise<PresetEntry[]> =>
     invoke('get_presets', { className, offset, limit, sortBy, search });
-
-export const getConfig = (): Promise<AppConfig> =>
-    invoke('get_config');
-
-export const saveConfig = (config: AppConfig): Promise<void> =>
-    invoke('save_config', { config });
-
-export const injectPreset = (downloadPath: string): Promise<void> =>
-    invoke('inject_preset', { downloadPath });
-
-export const openFile = (path: string): Promise<void> =>
-    invoke('open_file', { path });
-
-export const runScrapper = (): Promise<string> =>
-    invoke('run_scrapper');
-
-export const stopScrapper = (): Promise<void> =>
-    invoke('stop_scrapper');
-
-export const checkPending = (): Promise<number> =>
-    invoke('check_pending');
-
-export const isDbReady = (): Promise<boolean> =>
-    invoke('is_db_ready');
-
-export const syncPopular = (): Promise<string> =>
-    invoke('sync_popular');
 
 export const getPopularPresets = (
     className: string,
@@ -83,23 +127,12 @@ export const getPopularPresets = (
 ): Promise<{ presets: PresetEntry[]; wanted: PresetEntry[] }> =>
     invoke('get_popular_presets', { className, offset, limit, sortBy, search, sinceTs, region });
 
-export const getPopularPresetById = (presetId: string): Promise<PresetEntry> =>
-    invoke('get_popular_preset_by_id', { presetId });
+export const getPresetById = (presetId: string): Promise<PresetEntry> =>
+    invoke('get_preset_by_id', { presetId });
 
-export interface PopularStats {
-    total: number;
-    d20: number; d30: number; d60: number;
-    d90: number; d180: number; d365: number;
-}
-
-export const getPopularStats = (className: string): Promise<PopularStats> =>
-    invoke('get_popular_stats', { className });
-
-export const getPopularRegions = (): Promise<string[]> =>
-    invoke('get_popular_regions');
-
-export const openUrl = (url: string): Promise<void> =>
-    invoke('open_url', { url });
+// ─────────────────────────────────────────────────────────────────
+// Presets (Write)
+// ─────────────────────────────────────────────────────────────────
 
 export const discardPreset = (presetId: string): Promise<void> =>
     invoke('discard_preset', { presetId });
@@ -113,8 +146,16 @@ export const setWanted = (ids: string[]): Promise<void> =>
 export const toggleWanted = (presetId: string): Promise<boolean> =>
     invoke('toggle_wanted', { presetId });
 
-export const getClassFavorites = (): Promise<string[]> =>
-    invoke('get_class_favorites');
+// ─────────────────────────────────────────────────────────────────
+// File & URL Operations
+// ─────────────────────────────────────────────────────────────────
 
-export const setClassFavorite = (className: string, isFavorite: boolean): Promise<void> =>
-    invoke('set_class_favorite', { className, isFavorite });
+export const injectPreset = (downloadPath: string): Promise<void> =>
+    invoke('inject_preset', { downloadPath });
+
+export const openFile = (path: string): Promise<void> =>
+    invoke('open_file', { path });
+
+export const openUrl = (url: string): Promise<void> =>
+    invoke('open_url', { url });
+

@@ -1,4 +1,3 @@
 pub mod commands;
-pub mod scraping;
+pub mod scrapping;
 pub mod service;
-pub mod sync;

@@ -122,6 +122,7 @@ export async function setMode(mode: 'presets' | 'popular') {
   if (get(viewMode) === mode) return;
   viewMode.set(mode);
   presets.set([]);
+  filterSortBy.set('downloads');
   filterRegion.set('');
   if (mode === 'popular') {
     try {

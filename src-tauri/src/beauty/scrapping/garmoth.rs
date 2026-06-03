@@ -10,7 +10,7 @@ pub struct GarmothPreset {
     pub id: u64,
     pub class: u32,
     pub title: Option<String>,
-    pub created_at: i64,
+    pub creation_at: i64,
     pub image_1: Option<String>,
     pub image_2: Option<String>,
     pub user_nickname: Option<String>,
@@ -51,6 +51,9 @@ impl GarmothClient {
     }
 
     pub async fn fetch_preset(&self, id: u64) -> Result<(GarmothPreset, serde_json::Value), AppError> {
+        let delay_ms = 500 + (id % 1000) as u64;
+        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+
         let url = format!("{}/api/beauty-album/preset/{}", API_BASE, id);
         let bytes = self.api_client
             .get(&url)
@@ -70,6 +73,10 @@ impl GarmothClient {
     }
 
     pub async fn fetch_popular(&self, class_id: Option<u32>, days: &str, region: &str) -> Result<Vec<serde_json::Value>, AppError> {
+        let hash = (class_id.unwrap_or(0) as u64).wrapping_mul(31) ^ days.len() as u64;
+        let delay_ms = 500 + (hash % 1000);
+        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+
         let class_param = class_id.map_or_else(|| "all".to_string(), |id| id.to_string());
         let url = format!(
             "{}/api/beauty-album/search-advanced?class={}&past={}&region={}&sort=popular&limit=100",

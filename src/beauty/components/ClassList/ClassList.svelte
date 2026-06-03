@@ -70,7 +70,9 @@
     const aFav = favorites.has(a.name);
     const bFav = favorites.has(b.name);
     if (aFav !== bFav) return aFav ? -1 : 1;
-    return b.preset_count - a.preset_count;
+    const aCount = viewMode === 'popular' ? (a.popular_count ?? 0) : a.preset_count;
+    const bCount = viewMode === 'popular' ? (b.popular_count ?? 0) : b.preset_count;
+    return bCount - aCount;
   });
 
   $: filterActive = localSortBy !== 'downloads' || localViewMode === 'popular' || localDays !== 0;

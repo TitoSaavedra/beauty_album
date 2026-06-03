@@ -4,7 +4,6 @@ use crate::core::db;
 use crate::core::events;
 use crate::core::state::{AppConfig, AppState, DbConn};
 use crate::app::service as config_service;
-use crate::beauty::scraping::service as scrapper_service;
 
 #[tauri::command]
 pub fn get_config(state: State<AppState>) -> Result<AppConfig, String> {
@@ -24,7 +23,12 @@ pub async fn save_config(
     events::emit_config_loaded(&app, &config);
 
     if !config.bdo_docs_dir.is_empty() && db.0.get().is_none() {
-        let (db_path, input_dir) = (config.db_path(), config.to_download_dir());
+        let (db_path, _input_dir, _presets_dir, _popular_dir) = (
+            config.db_path(),
+            config.to_download_dir(),
+            config.presets_dir(),
+            config.popular_dir(),
+        );
         for dir in &[
             config.db_dir(),
             config.presets_dir(),
@@ -46,7 +50,6 @@ pub async fn save_config(
                     eprintln!("Database failed: {}", e);
                 }
             }
-            scrapper_service::watch_input_dir(app_handle, input_dir).await;
         });
     }
 

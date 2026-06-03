@@ -53,13 +53,3 @@ pub async fn acquire_image(
         }
     }
 }
-
-pub async fn jitter_sleep() {
-    use std::time::Duration;
-    let millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_millis();
-    let delay_ms = 100u64 + (millis as u64 * 12 / 10);
-    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-}

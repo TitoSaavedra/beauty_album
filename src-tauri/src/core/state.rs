@@ -1,8 +1,7 @@
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct AppConfig {
@@ -53,13 +52,5 @@ pub struct DbConn(pub OnceLock<DatabaseConnection>);
 impl Default for DbConn {
     fn default() -> Self {
         Self(OnceLock::new())
-    }
-}
-
-pub struct ScrapperCancelToken(pub Arc<AtomicBool>);
-
-impl Default for ScrapperCancelToken {
-    fn default() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
     }
 }

@@ -12,13 +12,14 @@ pub async fn get_all_classes(db: &DatabaseConnection) -> Result<Vec<serde_json::
 pub async fn get_presets(
     db: &DatabaseConnection,
     presets_dir: &Path,
+    popular_dir: &Path,
     class_name: &str,
     sort_by: &str,
     search: &str,
     offset: i64,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>, AppError> {
-    Ok(PresetRepository::get_presets(db, presets_dir, class_name, sort_by, search, offset, limit).await?)
+    Ok(PresetRepository::get_presets(db, presets_dir, popular_dir, class_name, 0, sort_by, search, offset, limit, None, 0).await?)
 }
 
 pub async fn get_popular_presets(
@@ -34,8 +35,8 @@ pub async fn get_popular_presets(
     wanted_ids: Vec<String>,
     region: &str,
 ) -> Result<Vec<serde_json::Value>, AppError> {
-    let mut result = PresetRepository::get_popular_presets(
-        db, popular_dir, presets_dir, class_name, sort_by, search, since_ts, offset, limit, region,
+    let mut result = PresetRepository::get_presets(
+        db, presets_dir, popular_dir, class_name, 1, sort_by, search, offset, limit, Some(region), since_ts,
     )
     .await?;
 

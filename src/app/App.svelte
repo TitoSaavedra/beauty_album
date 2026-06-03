@@ -10,7 +10,7 @@
   import ConfirmDialog from '../shared/components/ConfirmDialog/ConfirmDialog.svelte';
   import ToastContainer from '../shared/components/ToastContainer/ToastContainer.svelte';
   import { appConfig } from '../shared/stores/appConfig';
-  import { appLoading, appError, initStatus, settingsOpen } from '../shared/stores/appState';
+  import { appLoading, appError, settingsOpen } from '../shared/stores/appState';
   import { wantedPresets } from '../beauty/stores/wantedPresets';
   import {
     selectedClass, selectedClassObj, presets, loadingPresets, presetsError,
@@ -19,22 +19,20 @@
     selectClass, loadMore, setMode,
   } from '../beauty/stores/presetGrid';
   import {
-    scrapperRunning, scrapperTotal, scrapperCurrent, scrapperMsg, scrapperError, scrapperPhase,
-    startScraper,
-  } from '../beauty/stores/scraper';
+    personalRunning, personalTotal, personalCurrent, personalMsg, personalError, personalPhase,
+  } from '../beauty/stores/personalSync';
   import {
     popularRunning, popularTotal, popularCurrent, popularMsg, popularPhase,
-    startPopularSync,
   } from '../beauty/stores/popularSync';
   import { initRustEvents } from '../shared/events/rustEvents';
+  import { syncLoading } from '../shared/stores/syncLoading';
   import Button from '../shared/components/Button/Button.svelte';
-  import Splash from './Splash.svelte';
 
   let config: AppConfig = { bdo_docs_dir: '', cf_clearance: '' };
   let searchDebounce: ReturnType<typeof setTimeout> | null = null;
   $: stripPhase = $popularRunning
     ? ($popularPhase === 'images' ? 'popular-images' : 'popular')
-    : $scrapperPhase;
+    : $personalPhase;
 
   $: stripLabel = (() => {
     if ($popularRunning) {
@@ -42,18 +40,10 @@
       const phase = $popularPhase === 'images' ? 'Downloading Popular Images' : 'Syncing Popular';
       return `${prefix}${phase}${$popularMsg ? ' — ' + $popularMsg : ''}`;
     }
-    const prefix = $scrapperTotal > 0 ? `${$scrapperCurrent}/${$scrapperTotal} — ` : '';
-    const label = $scrapperPhase === 'presets' ? 'Downloading Presets'
-      : $scrapperPhase === 'images' ? 'Downloading Images'
-      : $scrapperMsg;
+    const prefix = $personalTotal > 0 ? `${$personalCurrent}/${$personalTotal} — ` : '';
+    const label = $personalPhase === 'images' ? 'Downloading Images' : $personalMsg;
     return `${prefix}${label}`;
   })();
-
-  async function runQueues() {
-    const pending = await api.checkPending();
-    if (pending > 0) await startScraper();
-    await startPopularSync();
-  }
 
   async function onDbReady(ok: boolean) {
     if (!ok) {
@@ -62,9 +52,9 @@
       return;
     }
     if (config.bdo_docs_dir) {
-      await wantedPresets.load();
+      // Fire wanted presets load in background without awaiting
+      wantedPresets.load().catch(() => {});
       appLoading.set(false);
-      runQueues();
     } else {
       appLoading.set(false);
       settingsOpen.set(true);
@@ -72,23 +62,28 @@
   }
 
   onMount(async () => {
-    await initRustEvents(onDbReady);
+    // Fire all initialization tasks in background without awaiting
+    initRustEvents(onDbReady).catch((e) => {
+      console.error('initRustEvents error:', e);
+    });
 
-    try {
-      initStatus.set('Loading configuration...');
-      config = await api.getConfig();
-      appConfig.set(config);
+    (async () => {
+      try {
+        config = await api.getConfig();
+        appConfig.set(config);
 
-      if (!config.bdo_docs_dir) {
-        appLoading.set(false);
-        settingsOpen.set(true);
-      } else {
-        initStatus.set('Opening database...');
-        if (await api.isDbReady()) {
-          await onDbReady(true);
+        if (!config.bdo_docs_dir) {
+          settingsOpen.set(true);
+          return;
         }
+
+        const dbReady = await api.isDbReady();
+        await onDbReady(dbReady);
+      } catch (e) {
+        console.error('App init error:', e);
+        appError.set(String(e));
       }
-    } catch { appLoading.set(false); }
+    })();
   });
 
   async function handleSettingsSave(e: CustomEvent<AppConfig>) {
@@ -99,16 +94,13 @@
     selectedClassObj.set(null);
     presets.set([]);
     if (!config.bdo_docs_dir) return;
-    if (await api.isDbReady()) {
-      appLoading.set(true);
-      initStatus.set('Reloading...');
-      await wantedPresets.load();
-      appLoading.set(false);
-      runQueues();
-    } else {
-      appLoading.set(true);
-      initStatus.set('Opening database...');
-    }
+
+    // Fire reload tasks in background without awaiting
+    (async () => {
+      if (await api.isDbReady()) {
+        await wantedPresets.load().catch(() => {});
+      }
+    })();
   }
 
   function handleSelectClass(e: CustomEvent<ClassEntry>) {
@@ -141,9 +133,7 @@
   </nav>
 
   <div class="main-layout">
-    {#if $appLoading}
-      <Splash status={$initStatus} />
-    {:else if $appError}
+    {#if $appError}
       <div class="app-init-error">{$appError}</div>
     {:else}
       <aside class="sidebar">
@@ -193,21 +183,21 @@
     {/if}
   </div>
 
-  {#if ($appLoading && !$appError) || $scrapperRunning || $scrapperMsg || $popularRunning}
-    <div class="status-bar" class:has-error={!!$scrapperError} data-phase={$appLoading ? '' : stripPhase}>
+  {#if $syncLoading || $personalRunning || $popularRunning}
+    <div class="status-bar" class:has-error={!!$personalError} data-phase={stripPhase}>
       <div class="status-bar-track">
-        {#if $appLoading || ($scrapperRunning && $scrapperTotal === 0) || ($popularRunning && $popularTotal === 0)}
+        {#if ($personalTotal === 0 && $popularTotal === 0) || (!$personalRunning && !$popularRunning)}
           <div class="status-bar-sweep"></div>
         {:else}
           <div
             class="status-bar-fill"
             style="width: {$popularRunning
               ? Math.round(($popularCurrent / $popularTotal) * 100)
-              : Math.round(($scrapperCurrent / $scrapperTotal) * 100)}%"
+              : Math.round(($personalCurrent / $personalTotal) * 100)}%"
           ></div>
         {/if}
       </div>
-      <span class="status-bar-text">{$appLoading ? $initStatus : stripLabel}</span>
+      <span class="status-bar-text">{$syncLoading || stripLabel}</span>
     </div>
   {/if}
 </div>

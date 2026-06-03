@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS presets (
     likes           INTEGER NOT NULL DEFAULT 0,
     image_1         TEXT,
     image_2         TEXT,
-    created_at      INTEGER,
+    creation_at     INTEGER,
     customizing_id  INTEGER,
     region          TEXT,
     score           INTEGER,
