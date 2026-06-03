@@ -1,8 +1,6 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::core::state::AppConfig;
-
 #[derive(Serialize, Clone, Debug)]
 pub enum ProgressType {
     #[serde(rename = "preset")]
@@ -37,17 +35,8 @@ pub fn emit_progress(app: &AppHandle, progress: ScrapperProgress) {
     let _ = app.emit("scrapper_progress", progress);
 }
 
-pub fn emit_db_ready(app: &AppHandle, ok: bool) {
-    let _ = app.emit("db_ready", ok);
-}
-
 pub fn emit_init_progress(app: &AppHandle, message: &str) {
     let _ = app.emit("init_progress", message);
-}
-
-
-pub fn emit_config_loaded(app: &AppHandle, config: &AppConfig) {
-    let _ = app.emit("config_loaded", config);
 }
 
 pub fn emit_sync_loading(app: &AppHandle, message: &str) {

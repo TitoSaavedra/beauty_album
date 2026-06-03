@@ -1,7 +1,6 @@
 use tauri::{AppHandle, Manager, State};
 
 use crate::core::db;
-use crate::core::events;
 use crate::core::state::{AppConfig, AppState, DbConn};
 use crate::app::service as config_service;
 
@@ -20,7 +19,6 @@ pub async fn save_config(
 ) -> Result<(), String> {
     config_service::save(&app, &config).map_err(|e| e.to_string())?;
     *state.0.lock().map_err(|e| e.to_string())? = config.clone();
-    events::emit_config_loaded(&app, &config);
 
     if !config.bdo_docs_dir.is_empty() && db.0.get().is_none() {
         let (db_path, _input_dir, _presets_dir, _popular_dir) = (
@@ -43,10 +41,8 @@ pub async fn save_config(
                 Ok(conn) => {
                     let db_state = app_handle.state::<DbConn>();
                     let _ = db_state.0.set(conn);
-                    events::emit_db_ready(&app_handle, true);
                 }
                 Err(e) => {
-                    events::emit_db_ready(&app_handle, false);
                     eprintln!("Database failed: {}", e);
                 }
             }

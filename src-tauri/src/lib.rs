@@ -20,7 +20,6 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let initial_config = app::service::load(app.handle());
-            core::events::emit_config_loaded(app.handle(), &initial_config);
             app.manage(AppState(Mutex::new(initial_config.clone())));
             app.manage(DbConn::default());
 
@@ -29,16 +28,6 @@ pub fn run() {
                 let configured = !initial_config.bdo_docs_dir.is_empty();
 
                 if configured {
-                    core::events::emit_progress(&app_handle, core::events::ScrapperProgress {
-                        preset_id: "0".to_string(),
-                        status: core::events::ProgressStatus::Processing,
-                        message: "Initializing...".to_string(),
-                        class_name: "INIT".to_string(),
-                        class_id: 0,
-                        current: 0,
-                        total: 0,
-                        progress_type: core::events::ProgressType::Preset,
-                    });
                     let (db_path, input_dir, presets_dir, popular_dir) = {
                         for dir in &[
                             initial_config.db_dir(),
@@ -60,11 +49,9 @@ pub fn run() {
                         Ok(conn) => {
                             let db_state = app_handle.state::<DbConn>();
                             let _ = db_state.0.set(conn);
-                            core::events::emit_db_ready(&app_handle, true);
                             true
                         }
                         Err(e) => {
-                            core::events::emit_db_ready(&app_handle, false);
                             eprintln!("Database failed: {}", e);
                             false
                         }
