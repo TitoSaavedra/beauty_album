@@ -1,0 +1,6 @@
+[tools]
+node = "22"
+
+[tasks.dev]
+description = "Levanta la app Tauri en modo dev"
+run = "pnpm tauri dev"
