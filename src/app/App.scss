@@ -186,6 +186,32 @@
   margin-bottom: 8px;
 }
 
+.skel-class-row {
+  height: 36px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #0d1219 25%, #131b24 50%, #0d1219 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+.skel-grid {
+  flex: 1;
+  padding: 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 24px;
+  align-content: start;
+}
+
+.skel-card {
+  aspect-ratio: 4 / 5;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #0d1219 25%, #141c25 50%, #0d1219 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border: 1px solid #1a232c;
+}
+
 @keyframes shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }

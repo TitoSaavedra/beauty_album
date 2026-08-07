@@ -116,12 +116,14 @@ impl BrowserSession {
 
         match response {
             Some(resp) => {
-                if resp.status() == 403 {
-                    return Err(AppError::CfBlocked);
+                match resp.status() {
+                    403 => Err(AppError::CfBlocked),
+                    404 => Err(AppError::Scrape(format!("not found: {}", url))),
+                    s if s >= 400 => Err(AppError::Scrape(format!("http {}: {}", s, url))),
+                    _ => resp.body()
+                        .await
+                        .map_err(|e| AppError::Scrape(format!("dl body: {:?}", e))),
                 }
-                resp.body()
-                    .await
-                    .map_err(|e| AppError::Scrape(format!("dl body: {:?}", e)))
             }
             None => Err(AppError::Scrape(format!("no response for {}", url))),
         }

@@ -156,7 +156,8 @@ async fn download_preset_images(
                     }
                 }
                 PresetType::Popular => {
-                    let _ = PresetRepository::popular_update_image_ok(db, preset_id as i64, img, now).await;
+                    let img_path = format!("/images/{}/{}/{}", class_name, preset_id, img);
+                    let _ = PresetRepository::popular_update_image_ok(db, preset_id as i64, &img_path, now).await;
                 }
             }
 
@@ -622,8 +623,10 @@ async fn download_all_parallel(
         let preset_dir = popular_dir.join(&class_display).join(id.to_string());
         let _ = tokio::fs::create_dir_all(&preset_dir).await;
 
-        let image_1 = item["image_1"].as_str().filter(|s| !s.is_empty()).map(String::from);
-        let image_2 = item["image_2"].as_str().filter(|s| !s.is_empty()).map(String::from);
+        let image_1 = item["image_1"].as_str().filter(|s| !s.is_empty())
+            .and_then(|u| u.rsplit('/').next()).map(String::from);
+        let image_2 = item["image_2"].as_str().filter(|s| !s.is_empty())
+            .and_then(|u| u.rsplit('/').next()).map(String::from);
 
         let before_copy = image_1.as_deref()
             .or(image_2.as_deref())
